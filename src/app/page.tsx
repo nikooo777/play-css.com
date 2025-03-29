@@ -1,4 +1,4 @@
-import ServerBrowser from './servers/page';
+import { ServerBrowserClient } from './servers/client';
 
 async function getServers() {
   const response = await fetch(`${process.env.API_URL}/servers`, {
@@ -14,5 +14,5 @@ async function getServers() {
 
 export default async function Home() {
   const initialServers = await getServers();
-  return <ServerBrowser initialServers={initialServers} />;
+  return <ServerBrowserClient initialServers={initialServers} />;
 }
