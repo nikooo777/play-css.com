@@ -173,10 +173,10 @@ export default function ServerBrowser() {
       <div className="max-w-[1400px] mx-auto">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Counter-Strike: Source Server Browser
+            Counter-Strike: Source - Server Browser
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Find and connect to CS: Source servers
+            Find and connect to CS:S servers without the worry of spam servers polluting the list.
           </p>
           <div className="flex justify-center gap-8 text-gray-700 dark:text-gray-300">
             <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
@@ -185,7 +185,7 @@ export default function ServerBrowser() {
             </div>
             <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
               <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalPlayers}</div>
-              <div className="text-sm">Players Online</div>
+              <div className="text-sm">Ingame Players</div>
             </div>
           </div>
         </div>
