@@ -28,9 +28,9 @@ interface Filters {
 
 const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',') || [];
 
-export default function ServerBrowser() {
-  const [servers, setServers] = useState<Server[]>([]);
-  const [loading, setLoading] = useState(true);
+export default function ServerBrowser({ initialServers }: { initialServers: Server[] }) {
+  const [servers, setServers] = useState<Server[]>(initialServers);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>('players');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
@@ -42,11 +42,14 @@ export default function ServerBrowser() {
     ipFilter: '',
     stripSpecialChars: true,
   });
+  const [debouncedFilters, setDebouncedFilters] = useState<Filters>(filters);
 
+  // Refresh servers every 30 seconds
   useEffect(() => {
     const fetchServers = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/servers`);
+        setLoading(true);
+        const response = await fetch('/api/servers');
         if (!response.ok) {
           throw new Error('Failed to fetch servers');
         }
@@ -59,7 +62,8 @@ export default function ServerBrowser() {
       }
     };
 
-    fetchServers();
+    const interval = setInterval(fetchServers, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSort = (field: SortField) => {
