@@ -32,6 +32,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [servers, setServers] = useState<Server[]>(initialServers);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [sortField, setSortField] = useState<SortField>('players');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [filters, setFilters] = useState<Filters>({
@@ -59,6 +60,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         setError(err instanceof Error ? err.message : 'Failed to fetch servers');
       } finally {
         setLoading(false);
+        setIsInitialLoad(false);
       }
     };
 
@@ -144,7 +146,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const totalPlayers = filteredServers.reduce((sum, server) => sum + server.players, 0);
   const totalServers = filteredServers.length;
 
-  if (loading) {
+  if (isInitialLoad && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
