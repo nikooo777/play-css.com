@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { ServerModal } from './ServerModal';
+import { CountryFlag } from '@/components/CountryFlag';
 
 interface Server {
   name: string;
@@ -44,6 +46,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     stripSpecialChars: true,
   });
   const [debouncedFilters, setDebouncedFilters] = useState<Filters>(filters);
+  const [selectedServer, setSelectedServer] = useState<Server | null>(null);
 
   // Refresh servers every 30 seconds
   useEffect(() => {
@@ -64,6 +67,10 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
       }
     };
 
+    // Initial fetch
+    fetchServers();
+
+    // Set up interval for subsequent fetches
     const interval = setInterval(fetchServers, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -254,7 +261,10 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
             </div>
 
             <div className="flex items-center space-x-2 h-[42px]">
-              <div className="relative flex items-center">
+              <div 
+                className="relative flex items-center cursor-pointer"
+                onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
+              >
                 <input
                   type="checkbox"
                   className="peer sr-only"
@@ -263,13 +273,19 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
               </div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+              <label 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
+                onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
+              >
                 Hide Servers with Bots
               </label>
             </div>
 
             <div className="flex items-center space-x-2 h-[42px]">
-              <div className="relative flex items-center">
+              <div 
+                className="relative flex items-center cursor-pointer"
+                onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
+              >
                 <input
                   type="checkbox"
                   className="peer sr-only"
@@ -278,7 +294,10 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
               </div>
-              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+              <label 
+                className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
+                onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
+              >
                 Strip Special Characters
               </label>
             </div>
@@ -309,7 +328,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                     Players <SortIcon field="players" />
                   </th>
                   <th 
-                    className="w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    className="hidden md:table-cell w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
                     onClick={() => handleSort('ip')}
                   >
                     IP:Port <SortIcon field="ip" />
@@ -320,7 +339,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                   >
                     Country <SortIcon field="country" />
                   </th>
-                  <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  <th className="hidden md:table-cell w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                     Join
                   </th>
                 </tr>
@@ -329,9 +348,10 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 {sortedServers.map((server, index) => (
                   <tr
                     key={index}
-                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors ${
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${
                       VIP_IPS.includes(server.ip) ? 'bg-green-50 dark:bg-green-900/20' : ''
                     }`}
+                    onClick={() => setSelectedServer(server)}
                   >
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900 dark:text-white truncate whitespace-nowrap" title={server.name}>
@@ -353,22 +373,23 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                         {server.players}/{server.max_players}{server.bots > 0 ? ` (${server.bots} bots)` : ''}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-6 py-4">
                       <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
                         {server.ip}:{server.port}
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {server.country || 'Unknown'}
+                      <div className="flex items-center gap-2">
+                        <CountryFlag countryCode={server.country}/>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="hidden md:table-cell px-6 py-4">
                       <a
                         href={`steam://connect/${server.ip}:${server.port}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         Join
                       </a>
@@ -380,6 +401,21 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
           </div>
         </div>
       </div>
+
+      <ServerModal
+        server={selectedServer || { 
+          ip: '', 
+          port: 0,
+          name: '',
+          map: '',
+          players: 0,
+          max_players: 0,
+          bots: 0,
+          country: ''
+        }}
+        isOpen={!!selectedServer}
+        onClose={() => setSelectedServer(null)}
+      />
     </div>
   );
 } 
