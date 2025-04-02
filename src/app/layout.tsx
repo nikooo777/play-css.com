@@ -1,8 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#000000",
+};
 
 export const metadata: Metadata = {
   title: "Play CSS - Counter-Strike: Source Server Browser",
@@ -22,8 +28,6 @@ export const metadata: Metadata = {
     description: "Browse and find Counter-Strike: Source (CSS) servers worldwide. Real-time server information, player counts, maps, and locations.",
   },
   robots: "index, follow",
-  viewport: "width=device-width, initial-scale=1",
-  themeColor: "#000000",
   manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
