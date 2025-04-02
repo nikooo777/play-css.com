@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { ServerModal } from './ServerModal';
 import { CountryFlag } from '@/components/CountryFlag';
 
+// Interfaces
 interface Server {
   name: string;
   map: string;
@@ -15,12 +16,8 @@ interface Server {
   country: string;
 }
 
-type SortField = 'name' | 'map' | 'players' | 'ip' | 'country';
-type SortDirection = 'asc' | 'desc';
-type ServerStatus = 'all' | 'empty' | 'full' | 'partial';
-
 interface Filters {
-  status: ServerStatus;
+  status: 'all' | 'empty' | 'full' | 'partial';
   noBots: boolean;
   mapFilter: string;
   nameFilter: string;
@@ -28,15 +25,23 @@ interface Filters {
   stripSpecialChars: boolean;
 }
 
+// Constants
 const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',') || [];
+const REFRESH_INTERVAL = 30000; // 30 seconds
+
+// Utility Functions
+const stripSpecialChars = (str: string): string => {
+  return str.replace(/[^\x20-\x7E\u0400-\u04FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/g, '');
+};
 
 export function ServerBrowserClient({ initialServers }: { initialServers: Server[] }) {
+  // State
   const [servers, setServers] = useState<Server[]>(initialServers);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [sortField, setSortField] = useState<SortField>('players');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = useState<'name' | 'map' | 'players' | 'ip' | 'country'>('players');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filters, setFilters] = useState<Filters>({
     status: 'all',
     noBots: false,
@@ -45,122 +50,93 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     ipFilter: '',
     stripSpecialChars: true,
   });
-  const [debouncedFilters, setDebouncedFilters] = useState<Filters>(filters);
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
 
-  // Refresh servers every 30 seconds
+  // Fetch servers
+  const fetchServers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/servers');
+      if (!response.ok) throw new Error('Failed to fetch servers');
+      const data: Server[] = await response.json();
+      setServers(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch servers');
+    } finally {
+      setLoading(false);
+      setIsInitialLoad(false);
+    }
+  };
+
+  // Setup server refresh
   useEffect(() => {
-    const fetchServers = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch('/api/servers');
-        if (!response.ok) {
-          throw new Error('Failed to fetch servers');
-        }
-        const data = await response.json();
-        setServers(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch servers');
-      } finally {
-        setLoading(false);
-        setIsInitialLoad(false);
-      }
-    };
-
-    // Initial fetch
     fetchServers();
-
-    // Set up interval for subsequent fetches
-    const interval = setInterval(fetchServers, 30000);
+    const interval = setInterval(fetchServers, REFRESH_INTERVAL);
     return () => clearInterval(interval);
   }, []);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+  // Sorting handler
+  const handleSort = (field: typeof sortField) => {
+    setSortField(field);
+    setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'asc');
   };
 
-  const stripSpecialChars = (str: string) => {
-    // Keep basic ASCII, Cyrillic (U+0400 to U+04FF), and CJK characters
-    // CJK ranges:
-    // Chinese: U+4E00 to U+9FFF
-    // Japanese: U+3040 to U+309F (Hiragana), U+30A0 to U+30FF (Katakana)
-    // Korean: U+AC00 to U+D7AF (Hangul)
-    return str.replace(/[^\x20-\x7E\u0400-\u04FF\u4E00-\u9FFF\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]/g, '');
-  };
+  // Filter and sort servers
+  const processedServers = useMemo(() => {
+    // Filter servers
+    const filtered = servers.filter(server => {
+      const name = filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name;
+      const map = filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map;
 
-  const filteredServers = servers.filter(server => {
-    const name = filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name;
-    const map = filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map;
-
-    // Status filter
-    if (filters.status !== 'all') {
-      switch (filters.status) {
-        case 'empty':
-          if (server.players > 0) return false;
-          break;
-        case 'full':
-          if (server.players < server.max_players) return false;
-          break;
-        case 'partial':
-          if (server.players === 0 || server.players === server.max_players) return false;
-          break;
+      if (filters.status !== 'all') {
+        if (filters.status === 'empty' && server.players > 0) return false;
+        if (filters.status === 'full' && server.players < server.max_players) return false;
+        if (filters.status === 'partial' && (server.players === 0 || server.players === server.max_players)) return false;
       }
-    }
 
-    // No bots filter
-    if (filters.noBots && server.bots > 0) return false;
+      return !(
+        (filters.noBots && server.bots > 0) ||
+        (filters.mapFilter && !map.toLowerCase().includes(filters.mapFilter.toLowerCase())) ||
+        (filters.nameFilter && !name.toLowerCase().includes(filters.nameFilter.toLowerCase())) ||
+        (filters.ipFilter && !server.ip.includes(filters.ipFilter))
+      );
+    });
 
-    // Map filter
-    if (filters.mapFilter && !map.toLowerCase().includes(filters.mapFilter.toLowerCase())) return false;
+    // Sort servers
+    return [...filtered].sort((a, b) => {
+      const multiplier = sortDirection === 'asc' ? 1 : -1;
+      const getValue = (server: Server, field: typeof sortField) => {
+        switch (field) {
+          case 'name': return filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name;
+          case 'map': return filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map;
+          case 'players': return server.players;
+          case 'ip': return server.ip;
+          case 'country': return server.country || '';
+        }
+      };
+      const valueA = getValue(a, sortField);
+      const valueB = getValue(b, sortField);
+      return multiplier * (typeof valueA === 'string' ? valueA.localeCompare(valueB as string) : (valueA as number) - (valueB as number));
+    });
+  }, [servers, filters, sortField, sortDirection]);
 
-    // Name filter
-    if (filters.nameFilter && !name.toLowerCase().includes(filters.nameFilter.toLowerCase())) return false;
+  // Calculate stats
+  const stats = useMemo(() => ({
+    totalPlayers: processedServers.reduce((sum, server) => sum + server.players, 0),
+    totalServers: processedServers.length,
+  }), [processedServers]);
 
-    // IP filter
-    if (filters.ipFilter && !server.ip.includes(filters.ipFilter)) return false;
-
-    return true;
-  });
-
-  const sortedServers = [...filteredServers].sort((a, b) => {
-    const multiplier = sortDirection === 'asc' ? 1 : -1;
-    
-    switch (sortField) {
-      case 'name':
-        return multiplier * (filters.stripSpecialChars ? 
-          stripSpecialChars(a.name).localeCompare(stripSpecialChars(b.name)) :
-          a.name.localeCompare(b.name));
-      case 'map':
-        return multiplier * (filters.stripSpecialChars ?
-          stripSpecialChars(a.map).localeCompare(stripSpecialChars(b.map)) :
-          a.map.localeCompare(b.map));
-      case 'players':
-        return multiplier * (a.players - b.players);
-      case 'ip':
-        return multiplier * a.ip.localeCompare(b.ip);
-      case 'country':
-        return multiplier * (a.country || '').localeCompare(b.country || '');
-      default:
-        return 0;
-    }
-  });
-
-  const totalPlayers = filteredServers.reduce((sum, server) => sum + server.players, 0);
-  const totalServers = filteredServers.length;
-
+  // Loading state
   if (isInitialLoad && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500" />
       </div>
     );
   }
 
+  // Error state
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -172,47 +148,43 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     );
   }
 
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return null;
-    return (
-      <span className="ml-1">
-        {sortDirection === 'asc' ? '↑' : '↓'}
-      </span>
-    );
-  };
+  // Sort icon component
+  const SortIcon = ({ field }: { field: typeof sortField }) => (
+    sortField === field ? <span className="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span> : null
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-[1400px] mx-auto">
+        {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Counter-Strike: Source - Server Browser
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Find and connect to CS:S servers without the worry of spam servers polluting the list.
+            Find and connect to CS:S servers without spam interference
           </p>
           <div className="flex justify-center gap-8 text-gray-700 dark:text-gray-300">
             <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
-              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{totalServers}</div>
+              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.totalServers}</div>
               <div className="text-sm">Total Servers</div>
             </div>
             <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
-              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalPlayers}</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.totalPlayers}</div>
               <div className="text-sm">Ingame Players</div>
             </div>
           </div>
         </div>
 
+        {/* Filters */}
         <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Server Status
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Server Status</label>
               <select
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 h-[42px]"
+                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value as ServerStatus })}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value as Filters['status'] })}
               >
                 <option value="all">All Servers</option>
                 <option value="empty">Empty</option>
@@ -220,46 +192,36 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 <option value="partial">Non-empty & Non-full</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Map Filter
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Map Filter</label>
               <input
                 type="text"
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 h-[42px]"
+                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 placeholder="Filter by map name..."
                 value={filters.mapFilter}
                 onChange={(e) => setFilters({ ...filters, mapFilter: e.target.value })}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Server Name Filter
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Server Name Filter</label>
               <input
                 type="text"
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 h-[42px]"
+                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 placeholder="Filter by server name..."
                 value={filters.nameFilter}
                 onChange={(e) => setFilters({ ...filters, nameFilter: e.target.value })}
               />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                IP Filter
-              </label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">IP Filter</label>
               <input
                 type="text"
-                className="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-indigo-500 focus:ring-indigo-500 px-3 py-2 h-[42px]"
+                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 placeholder="Filter by IP..."
                 value={filters.ipFilter}
                 onChange={(e) => setFilters({ ...filters, ipFilter: e.target.value })}
               />
             </div>
-
             <div className="flex items-center space-x-2 h-[42px]">
               <div 
                 className="relative flex items-center cursor-pointer"
@@ -280,7 +242,6 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 Hide Servers with Bots
               </label>
             </div>
-
             <div className="flex items-center space-x-2 h-[42px]">
               <div 
                 className="relative flex items-center cursor-pointer"
@@ -304,48 +265,34 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
           </div>
         </div>
 
+        {/* Server List with Sticky Header */}
         <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden">
-          <div className="w-full overflow-x-auto">
+          <div className="max-h-[700px] overflow-y-auto">
             <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
                 <tr>
-                  <th 
-                    className="w-[35%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider truncate cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('name')}
-                  >
-                    Server Name <SortIcon field="name" />
-                  </th>
-                  <th 
-                    className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('map')}
-                  >
-                    Map <SortIcon field="map" />
-                  </th>
-                  <th 
-                    className="w-[12%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('players')}
-                  >
-                    Players <SortIcon field="players" />
-                  </th>
-                  <th 
-                    className="hidden md:table-cell w-[18%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('ip')}
-                  >
-                    IP:Port <SortIcon field="ip" />
-                  </th>
-                  <th 
-                    className="w-[8%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('country')}
-                  >
-                    Country <SortIcon field="country" />
-                  </th>
-                  <th className="hidden md:table-cell w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                  {[
+                    { field: 'name', label: 'Server Name', width: 'w-[35%]' },
+                    { field: 'map', label: 'Map', width: 'w-[12%]' },
+                    { field: 'players', label: 'Players', width: 'w-[12%]' },
+                    { field: 'ip', label: 'IP:Port', width: 'w-[18%]', hidden: 'hidden md:table-cell' },
+                    { field: 'country', label: 'Country', width: 'w-[8%]' },
+                  ].map(({ field, label, width, hidden = '' }) => (
+                    <th
+                      key={field}
+                      className={`${width} ${hidden} px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600`}
+                      onClick={() => handleSort(field as typeof sortField)}
+                    >
+                      {label} <SortIcon field={field as typeof sortField} />
+                    </th>
+                  ))}
+                  <th className="hidden md:table-cell w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray- hoy-600 uppercase tracking-wider">
                     Join
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {sortedServers.map((server, index) => (
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {processedServers.map((server, index) => (
                   <tr
                     key={index}
                     className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${
@@ -379,16 +326,14 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <CountryFlag countryCode={server.country}/>
-                      </div>
+                      <CountryFlag countryCode={server.country} />
                     </td>
                     <td className="hidden md:table-cell px-6 py-4">
                       <a
                         href={`steam://connect/${server.ip}:${server.port}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700"
                         onClick={(e) => e.stopPropagation()}
                       >
                         Join
@@ -402,20 +347,14 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         </div>
       </div>
 
-      <ServerModal
-        server={selectedServer || { 
-          ip: '', 
-          port: 0,
-          name: '',
-          map: '',
-          players: 0,
-          max_players: 0,
-          bots: 0,
-          country: ''
-        }}
-        isOpen={!!selectedServer}
-        onClose={() => setSelectedServer(null)}
-      />
+      {/* Server Modal */}
+      {selectedServer && (
+        <ServerModal
+          server={selectedServer}
+          isOpen={!!selectedServer}
+          onClose={() => setSelectedServer(null)}
+        />
+      )}
     </div>
   );
-} 
+}
