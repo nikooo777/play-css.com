@@ -1,0 +1,501 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Source Engine Server List API",
+    "description": "API for managing and querying Source Engine game servers",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8888",
+      "description": "Local development server"
+    }
+  ],
+  "paths": {
+    "/servers": {
+      "get": {
+        "summary": "Get list of online servers",
+        "description": "Returns a list of all currently online, non-blacklisted servers",
+        "operationId": "getServerList",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OnlineServer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/server/{address}": {
+      "get": {
+        "summary": "Get server players",
+        "description": "Returns a list of players on a specific server",
+        "operationId": "getServer",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "description": "Server address in format IP:PORT",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}:\\d{1,5}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Player"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid address format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Invalid address"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "Server not found"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blacklist": {
+      "get": {
+        "summary": "Get blacklist for Counter-Strike: Source",
+        "description": "Returns a blacklist file in Counter-Strike: Source format containing all blacklisted IPs and banned servers",
+        "operationId": "getBlacklist",
+        "responses": {
+          "200": {
+            "description": "Successful operation - returns blacklist in CS:S format",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "description": "Counter-Strike: Source blacklist format",
+                  "example": "\"serverblacklist\"\n{\n    \"server\"\n    {\n        \"name\"        \"192.168.1.1\"\n        \"date\"        \"1742307022\"\n        \"addr\"        \"192.168.1.1:0\"\n    }\n    \"server\"\n    {\n        \"name\"        \"192.168.1.2:27015\"\n        \"date\"        \"1742307022\"\n        \"addr\"        \"192.168.1.2:27015\"\n    }\n}"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/blacklist": {
+      "post": {
+        "summary": "Blacklist a server",
+        "description": "Blacklists a server with a specified reason",
+        "operationId": "blacklistServer",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "description": "Server address in format IP:PORT",
+                    "example": "192.168.1.1:27015"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Reason for blacklisting",
+                    "example": "none",
+                    "enum": [
+                      "none",
+                      "differing_address",
+                      "illegal_player_count",
+                      "suspicious_players",
+                      "same_connection_time"
+                    ]
+                  }
+                },
+                "required": [
+                  "address"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server blacklisted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string",
+                      "example": "Server blacklisted successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Server not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/banned": {
+      "get": {
+        "summary": "Get banned servers",
+        "description": "Returns a list of all banned servers",
+        "operationId": "getBannedServers",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BannedServer"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/add": {
+      "post": {
+        "summary": "Add a server",
+        "description": "Adds a new server to the system",
+        "operationId": "addServer",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "description": "Server address in format IP:PORT",
+                    "example": "192.168.1.1:27015"
+                  }
+                },
+                "required": [
+                  "address"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server added successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string",
+                      "example": "Server added successfully"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "summary": "API Documentation",
+        "description": "Returns the OpenAPI documentation for the API",
+        "operationId": "getApiDocs",
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAPI"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "basicAuth": {
+        "type": "http",
+        "scheme": "basic",
+        "description": "Basic authentication with username and password'"
+      }
+    },
+    "schemas": {
+      "OnlineServer": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Server name",
+            "example": "My CS:S Server"
+          },
+          "map": {
+            "type": "string",
+            "description": "Current map",
+            "example": "de_dust2"
+          },
+          "players": {
+            "type": "integer",
+            "description": "Number of real players (excluding bots)",
+            "example": 10
+          },
+          "max_players": {
+            "type": "integer",
+            "description": "Maximum number of players allowed",
+            "example": 32
+          },
+          "bots": {
+            "type": "integer",
+            "description": "Number of bots on the server",
+            "example": 2
+          },
+          "ip": {
+            "type": "string",
+            "description": "Server IP address",
+            "example": "192.168.1.1"
+          },
+          "port": {
+            "type": "string",
+            "description": "Server port",
+            "example": "27015"
+          },
+          "country": {
+            "type": "string",
+            "description": "Country code where the server is located",
+            "example": "US"
+          }
+        }
+      },
+      "Player": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Player's unique identifier",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Player's name",
+            "example": "Player1"
+          },
+          "score": {
+            "type": "integer",
+            "description": "Player's score",
+            "example": 10
+          },
+          "connection_time": {
+            "type": "number",
+            "description": "Time in seconds the player has been connected",
+            "example": "300"
+          }
+        }
+      },
+      "BannedServer": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Server address in format IP:PORT",
+            "example": "192.168.1.1:27015"
+          },
+          "banned_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time when the server was banned",
+            "example": "2023-01-01T12:00:00Z"
+          },
+          "abuse_reason": {
+            "type": "string",
+            "description": "Reason for banning the server",
+            "example": "none",
+            "enum": [
+              "none",
+              "differing_address",
+              "illegal_player_count",
+              "suspicious_players",
+              "same_connection_time"
+            ]
+          }
+        }
+      },
+      "OpenAPI": {
+        "type": "object",
+        "description": "OpenAPI documentation for the API"
+      }
+    }
+  }
+}

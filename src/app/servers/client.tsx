@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { ServerModal } from './ServerModal';
+import { AdminPanel } from './AdminPanel';
 import { CountryFlag } from '@/components/CountryFlag';
 
 // Interfaces
@@ -12,7 +13,7 @@ interface Server {
   max_players: number;
   bots: number;
   ip: string;
-  port: number;
+  port: string;
   country: string;
 }
 
@@ -51,36 +52,85 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     stripSpecialChars: true,
   });
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Fetch servers
-  const fetchServers = async () => {
+  // Memoize handlers to prevent unnecessary re-renders
+  const handleCloseAdminPanel = useCallback(() => {
+    setShowAdminPanel(false);
+  }, []);
+
+  const handleCloseServerModal = useCallback(() => {
+    setSelectedServer(null);
+  }, []);
+
+  // Handle blacklist download
+  const handleDownloadBlacklist = useCallback(async () => {
     try {
-      setLoading(true);
+      const response = await fetch('/api/blacklist');
+      if (!response.ok) {
+        throw new Error('Failed to download blacklist');
+      }
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'server_blacklist.txt';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Failed to download blacklist:', error);
+      // You could add a toast notification here if you have one
+    }
+  }, []);
+
+  // Fetch servers with background refresh support
+  const fetchServers = useCallback(async (isBackgroundRefresh = false) => {
+    try {
+      if (isBackgroundRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
       const response = await fetch('/api/servers');
       if (!response.ok) throw new Error('Failed to fetch servers');
       const data: Server[] = await response.json();
+
       setServers(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch servers');
+      // Only show errors if it's not a background refresh or if there are no existing servers
+      if (!isBackgroundRefresh || servers.length === 0) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch servers');
+      }
     } finally {
-      setLoading(false);
-      setIsInitialLoad(false);
+      if (isBackgroundRefresh) {
+        setIsRefreshing(false);
+      } else {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }
     }
-  };
+  }, [servers.length]);
 
-  // Setup server refresh
+  // Setup server refresh (don't fetch immediately since we have initialServers)
   useEffect(() => {
-    fetchServers();
-    const interval = setInterval(fetchServers, REFRESH_INTERVAL);
+    const interval = setInterval(() => {
+      fetchServers(true); // Background refresh
+    }, REFRESH_INTERVAL);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchServers]);
 
   // Sorting handler
-  const handleSort = (field: typeof sortField) => {
+  const handleSort = useCallback((field: typeof sortField) => {
     setSortField(field);
     setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'asc');
-  };
+  }, [sortField]);
 
   // Filter and sort servers
   const processedServers = useMemo(() => {
@@ -154,76 +204,105 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-[1400px] mx-auto">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-4 sm:py-8 px-3 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Counter-Strike: Source - Server Browser
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
-            Find and connect to CS:S servers without spam interference
-          </p>
-          <div className="flex justify-center gap-8 text-gray-700 dark:text-gray-300">
-            <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
-              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.totalServers}</div>
-              <div className="text-sm">Total Servers</div>
+        <div className="text-center mb-6 sm:mb-8">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex-1">
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                Counter-Strike: Source - Server Browser
+              </h1>
+              <p className="text-gray-600 dark:text-gray-400 mb-4 text-sm sm:text-base">
+                Find and connect to CS:S servers without spam interference
+              </p>
             </div>
-            <div className="bg-white dark:bg-gray-800 px-6 py-3 rounded-lg shadow">
-              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.totalPlayers}</div>
-              <div className="text-sm">Ingame Players</div>
+            <button
+              onClick={() => setShowAdminPanel(true)}
+              className="px-3 py-1.5 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium focus:ring-2 focus:ring-gray-500 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span className="hidden sm:inline">Admin</span>
+            </button>
+          </div>
+          <div className="flex justify-center gap-4 sm:gap-6 text-gray-700 dark:text-gray-300 flex-wrap">
+            <div className="bg-white dark:bg-gray-800 px-4 sm:px-6 py-3 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="text-xl sm:text-2xl font-bold text-indigo-600 dark:text-indigo-400">{stats.totalServers}</div>
+              <div className="text-xs sm:text-sm">Real Servers</div>
             </div>
+            <div className="bg-white dark:bg-gray-800 px-4 sm:px-6 py-3 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+              <div className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.totalPlayers}</div>
+              <div className="text-xs sm:text-sm">Ingame Players</div>
+            </div>
+            <button
+              onClick={handleDownloadBlacklist}
+              className="bg-white dark:bg-gray-800 px-4 sm:px-6 py-3 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 hover:border-orange-300 dark:hover:border-orange-600 cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-orange-600 dark:text-orange-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div className="text-left min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-white">Blacklist</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">cstrike/cfg/</div>
+                </div>
+              </div>
+            </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Filters</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Server Status</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Server Status</label>
               <select
-                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className="w-full h-10 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 "
                 value={filters.status}
                 onChange={(e) => setFilters({ ...filters, status: e.target.value as Filters['status'] })}
               >
                 <option value="all">All Servers</option>
                 <option value="empty">Empty</option>
                 <option value="full">Full</option>
-                <option value="partial">Non-empty & Non-full</option>
+                <option value="partial">Has Players</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Map Filter</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Map Filter</label>
               <input
                 type="text"
-                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                placeholder="Filter by map name..."
+                className="w-full h-10 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 "
+                placeholder="e.g. de_dust2"
                 value={filters.mapFilter}
                 onChange={(e) => setFilters({ ...filters, mapFilter: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Server Name Filter</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Server Name</label>
               <input
                 type="text"
-                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                placeholder="Filter by server name..."
+                className="w-full h-10 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 "
+                placeholder="Search servers..."
                 value={filters.nameFilter}
                 onChange={(e) => setFilters({ ...filters, nameFilter: e.target.value })}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">IP Filter</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">IP Address</label>
               <input
                 type="text"
-                className="w-full h-[42px] px-3 py-2 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                placeholder="Filter by IP..."
+                className="w-full h-10 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 "
+                placeholder="192.168.1.1"
                 value={filters.ipFilter}
                 onChange={(e) => setFilters({ ...filters, ipFilter: e.target.value })}
               />
             </div>
-            <div className="flex items-center space-x-2 h-[42px]">
-              <div 
+            <div className="flex items-center space-x-3 h-10">
+              <div
                 className="relative flex items-center cursor-pointer"
                 onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
               >
@@ -235,15 +314,15 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
               </div>
-              <label 
+              <label
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
                 onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
               >
-                Hide Servers with Bots
+                Hide Bots
               </label>
             </div>
-            <div className="flex items-center space-x-2 h-[42px]">
-              <div 
+            <div className="flex items-center space-x-3 h-10">
+              <div
                 className="relative flex items-center cursor-pointer"
                 onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
               >
@@ -255,95 +334,203 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
               </div>
-              <label 
+              <label
                 className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
                 onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
               >
-                Strip Special Characters
+                Clean Names
               </label>
             </div>
           </div>
         </div>
 
-        {/* Server List with Sticky Header */}
-        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg overflow-hidden">
-          <div className="max-h-[700px] overflow-y-auto">
-            <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
-                <tr>
-                  {[
-                    { field: 'name', label: 'Server Name', width: 'w-[35%]' },
-                    { field: 'map', label: 'Map', width: 'w-[12%]' },
-                    { field: 'players', label: 'Players', width: 'w-[12%]' },
-                    { field: 'ip', label: 'IP:Port', width: 'w-[18%]', hidden: 'hidden md:table-cell' },
-                    { field: 'country', label: 'Country', width: 'w-[8%]' },
-                  ].map(({ field, label, width, hidden = '' }) => (
-                    <th
-                      key={field}
-                      className={`${width} ${hidden} px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600`}
-                      onClick={() => handleSort(field as typeof sortField)}
-                    >
-                      {label} <SortIcon field={field as typeof sortField} />
-                    </th>
-                  ))}
-                  <th className="hidden md:table-cell w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray- hoy-600 uppercase tracking-wider">
-                    Join
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {processedServers.map((server, index) => (
-                  <tr
-                    key={index}
-                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer ${
-                      VIP_IPS.includes(server.ip) ? 'bg-green-50 dark:bg-green-900/20' : ''
-                    }`}
-                    onClick={() => setSelectedServer(server)}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900 dark:text-white truncate whitespace-nowrap" title={server.name}>
-                        {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
-                        {VIP_IPS.includes(server.ip) && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
-                            VIP
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 dark:text-gray-400 truncate whitespace-nowrap" title={server.map}>
-                        {filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {server.players}/{server.max_players}{server.bots > 0 ? ` (${server.bots} bots)` : ''}
-                      </div>
-                    </td>
-                    <td className="hidden md:table-cell px-6 py-4">
-                      <div className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {server.ip}:{server.port}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <CountryFlag countryCode={server.country} />
-                    </td>
-                    <td className="hidden md:table-cell px-6 py-4">
-                      <a
-                        href={`steam://connect/${server.ip}:${server.port}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Join
-                      </a>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Refresh indicator - bottom right */}
+        {isRefreshing && (
+          <div className="fixed bottom-4 right-4 z-20">
+            <div className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-indigo-500"></div>
+              <span className="text-sm text-gray-600 dark:text-gray-400">Refreshing servers...</span>
+            </div>
           </div>
+        )}
+
+        {/* Server List */}
+        <div className="bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+          {processedServers.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-gray-400 mb-2">
+                <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p className="text-gray-500 dark:text-gray-400">No servers match your filters</p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden lg:block">
+                <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                  <table className="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0 z-10">
+                      <tr>
+                        {[
+                          { field: 'name', label: 'Server Name', width: 'w-[35%]' },
+                          { field: 'map', label: 'Map', width: 'w-[15%]' },
+                          { field: 'players', label: 'Players', width: 'w-[12%]' },
+                          { field: 'ip', label: 'IP:Port', width: 'w-[18%]' },
+                          { field: 'country', label: 'Location', width: 'w-[10%]' },
+                        ].map(({ field, label, width }) => (
+                          <th
+                            key={field}
+                            className={`${width} px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 `}
+                            onClick={() => handleSort(field as typeof sortField)}
+                          >
+                            <div className="flex items-center gap-1">
+                              {label}
+                              <SortIcon field={field as typeof sortField} />
+                            </div>
+                          </th>
+                        ))}
+                        <th className="w-[10%] px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                          Action
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                      {processedServers.map((server, index) => (
+                        <tr
+                          key={index}
+                          className={`hover:bg-gray-50 dark:hover:bg-gray-700  cursor-pointer ${
+                            VIP_IPS.includes(server.ip) ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500' : ''
+                          }`}
+                          onClick={() => setSelectedServer(server)}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center">
+                              <div className="truncate">
+                                <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={server.name}>
+                                  {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
+                                </div>
+                                {VIP_IPS.includes(server.ip) && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100 mt-1">
+                                    VIP
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-gray-900 dark:text-white truncate" title={server.map}>
+                              {filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {server.players}/{server.max_players}
+                              {server.bots > 0 && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                  {server.bots} bots
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm text-gray-600 dark:text-gray-400 font-mono">
+                              {server.ip}:{server.port}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-center">
+                              <CountryFlag countryCode={server.country} />
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <a
+                              href={`steam://connect/${server.ip}:${server.port}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 "
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Join
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Mobile Card View */}
+              <div className="lg:hidden">
+                <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                  <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {processedServers.map((server, index) => (
+                      <div
+                        key={index}
+                        className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-700  cursor-pointer ${
+                          VIP_IPS.includes(server.ip) ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500' : ''
+                        }`}
+                        onClick={() => setSelectedServer(server)}
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                                {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
+                              </h3>
+                              {VIP_IPS.includes(server.ip) && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                                  VIP
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                              <span className="font-medium">
+                                {filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <CountryFlag countryCode={server.country} />
+                                {server.country}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end text-right">
+                            <div className="text-sm font-medium text-gray-900 dark:text-white">
+                              {server.players}/{server.max_players}
+                            </div>
+                            {server.bots > 0 && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                {server.bots} bots
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                            {server.ip}:{server.port}
+                          </div>
+                          <a
+                            href={`steam://connect/${server.ip}:${server.port}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 "
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                            </svg>
+                            Join
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -352,9 +539,15 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         <ServerModal
           server={selectedServer}
           isOpen={!!selectedServer}
-          onClose={() => setSelectedServer(null)}
+          onClose={handleCloseServerModal}
         />
       )}
+
+      {/* Admin Panel */}
+      <AdminPanel
+        isOpen={showAdminPanel}
+        onClose={handleCloseAdminPanel}
+      />
     </div>
   );
 }
