@@ -50,24 +50,21 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
     setSuccess(null);
   };
 
-  // Load saved credentials when component mounts or becomes visible
   useEffect(() => {
     if (isOpen) {
       setIsCheckingAuth(true);
       const savedCredentials = loadAdminCredentials();
-      
+
       if (savedCredentials) {
         setCredentials(savedCredentials);
-        // Auto-authenticate with saved credentials
-        testAuthentication(savedCredentials);
+        testAuthentication(savedCredentials, true);
       } else {
         setIsCheckingAuth(false);
       }
     }
   }, [isOpen]);
 
-  // Test authentication with given credentials
-  const testAuthentication = async (testCredentials: AdminCredentials) => {
+  const testAuthentication = async (testCredentials: AdminCredentials, isAutoLogin = false): Promise<boolean> => {
     try {
       const response = await fetch('/api/admin/banned', {
         headers: {
@@ -80,23 +77,25 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
         setCredentials(testCredentials);
         const data = await response.json();
         setBannedServers(data);
-        if (isCheckingAuth) {
+        if (isAutoLogin) {
           setSuccess('Welcome back! Auto-logged in with saved credentials.');
         } else {
           setSuccess('Authentication successful');
         }
+        return true;
       } else {
-        if (isCheckingAuth) {
-          // Saved credentials are invalid, clear them
+        if (isAutoLogin) {
           clearAdminCredentials();
           setCredentials({ username: '', password: '' });
         }
         setError('Invalid username or password');
         setIsAuthenticated(false);
+        return false;
       }
-    } catch (err) {
+    } catch {
       setError('Authentication failed');
       setIsAuthenticated(false);
+      return false;
     } finally {
       setIsCheckingAuth(false);
     }
@@ -108,15 +107,14 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
     clearMessages();
 
     try {
-      await testAuthentication(credentials);
-      // Save credentials only if authentication was successful
-      if (isAuthenticated) {
+      const success = await testAuthentication(credentials);
+      if (success) {
         saveAdminCredentials(credentials);
       }
     } finally {
       setLoading(false);
     }
-  }, [credentials, isAuthenticated]);
+  }, [credentials]);
 
   const handleBlacklist = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,7 +147,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
       } else {
         setError(data.error || 'Failed to blacklist server');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to blacklist server');
     } finally {
       setLoading(false);
@@ -181,7 +179,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
       } else {
         setError(data.error || 'Failed to add server');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to add server');
     } finally {
       setLoading(false);
@@ -205,7 +203,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
       } else {
         setError('Failed to fetch banned servers');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to fetch banned servers');
     } finally {
       setLoading(false);
