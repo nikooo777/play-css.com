@@ -1,7 +1,7 @@
 'use client';
 
 import * as Flags from 'country-flag-icons/react/3x2';
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 
 interface CountryFlagProps {
   countryCode: string;
@@ -10,15 +10,11 @@ interface CountryFlagProps {
 
 export function CountryFlag({ countryCode, className = "w-6 h-4" }: CountryFlagProps) {
   const code = countryCode.toUpperCase();
-  const [countryName, setCountryName] = useState(''); // Empty initial state
-  
-  useEffect(() => {
-    // Only resolve name on client-side after mount
-    const name = new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || 'Unknown Location';
-    setCountryName(name);
+  const countryName = useMemo(() => {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code) || 'Unknown Location';
   }, [code]);
 
-  const FlagComponent = (Flags as any)[code] || null;
+  const FlagComponent = (Flags as Record<string, React.ComponentType<{ className?: string }>>)[code] || null;
 
   const defaultFlag = (
     <svg className={`${className} text-gray-400`} viewBox="0 0 24 24" fill="none" stroke="currentColor">
