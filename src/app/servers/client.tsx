@@ -20,6 +20,7 @@ interface Server {
 interface Filters {
   status: 'all' | 'empty' | 'full' | 'partial';
   noBots: boolean;
+  hideRussian: boolean;
   mapFilter: string;
   nameFilter: string;
   ipFilter: string;
@@ -46,6 +47,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [filters, setFilters] = useState<Filters>({
     status: 'all',
     noBots: false,
+    hideRussian: true,
     mapFilter: '',
     nameFilter: '',
     ipFilter: '',
@@ -144,6 +146,8 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         if (filters.status === 'full' && server.players < server.max_players) return false;
         if (filters.status === 'partial' && (server.players === 0 || server.players === server.max_players)) return false;
       }
+
+      if (filters.hideRussian && server.country.toUpperCase() === 'RU') return false;
 
       return !(
         (filters.noBots && server.bots > 0) ||
@@ -257,7 +261,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         {/* Filters */}
         <div className="bg-white dark:bg-gray-800 shadow-sm border border-gray-200 dark:border-gray-700 rounded-xl p-4 sm:p-6 mb-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Filters</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Server Status</label>
               <select
@@ -301,46 +305,31 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                 onChange={(e) => setFilters({ ...filters, ipFilter: e.target.value })}
               />
             </div>
-            <div className="flex items-center space-x-3 h-10">
+          </div>
+          <div className="flex flex-wrap gap-x-6 gap-y-3 mt-4">
+            {[
+              { key: 'noBots' as const, label: 'Hide Bots', title: 'Hide servers with AI players' },
+              { key: 'hideRussian' as const, label: 'Hide Russian' },
+              { key: 'stripSpecialChars' as const, label: 'Clean Names' },
+            ].map(({ key, label, title }) => (
               <div
-                className="relative flex items-center cursor-pointer"
-                onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
+                key={key}
+                className="flex items-center space-x-3 cursor-pointer"
+                title={title}
+                onClick={() => setFilters({ ...filters, [key]: !filters[key] })}
               >
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  checked={filters.noBots}
-                  onChange={(e) => setFilters({ ...filters, noBots: e.target.checked })}
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                <div className="relative flex items-center">
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={filters[key]}
+                    onChange={(e) => setFilters({ ...filters, [key]: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                </div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 select-none">{label}</span>
               </div>
-              <label
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
-                onClick={() => setFilters({ ...filters, noBots: !filters.noBots })}
-              >
-                Hide Bots
-              </label>
-            </div>
-            <div className="flex items-center space-x-3 h-10">
-              <div
-                className="relative flex items-center cursor-pointer"
-                onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
-              >
-                <input
-                  type="checkbox"
-                  className="peer sr-only"
-                  checked={filters.stripSpecialChars}
-                  onChange={(e) => setFilters({ ...filters, stripSpecialChars: e.target.checked })}
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
-              </div>
-              <label
-                className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer select-none"
-                onClick={() => setFilters({ ...filters, stripSpecialChars: !filters.stripSpecialChars })}
-              >
-                Clean Names
-              </label>
-            </div>
+            ))}
           </div>
         </div>
 
