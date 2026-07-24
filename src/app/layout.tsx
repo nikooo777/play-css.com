@@ -1,34 +1,45 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Barlow, Chakra_Petch, Share_Tech_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const barlow = Barlow({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-barlow",
+});
+
+const chakraPetch = Chakra_Petch({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-chakra",
+});
+
+const shareTechMono = Share_Tech_Mono({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-share-tech",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#000000",
+  themeColor: "#0c0f12",
 };
 
 export const metadata: Metadata = {
-  title: "Play CSS - Counter-Strike: Source Server Browser",
-  description: "Browse and find Counter-Strike: Source (CSS) servers worldwide. Real-time server information, player counts, maps, and locations. Find the perfect CS:Source server to play on. Also compatible with CS:GO and TF2 server browsing.",
-  keywords: "Counter-Strike: Source, CSS, CS:Source, server browser, game servers, CS:Source servers, multiplayer gaming, CS:Source maps, CS:Source locations, CS:Source player count, CS:Source server finder, Counter-Strike, CS:GO, TF2",
-  authors: [{ name: "Play CSS" }],
+  title: "play-css.com — Counter-Strike: Source Server Browser",
+  description:
+    "Browse every real Counter-Strike: Source server. Live player counts, maps and locations, with fake and spam servers filtered out.",
+  authors: [{ name: "play-css.com" }],
   openGraph: {
-    title: "Play CSS - Counter-Strike: Source Server Browser",
-    description: "Browse and find Counter-Strike: Source (CSS) servers worldwide. Real-time server information, player counts, maps, and locations.",
+    title: "play-css.com — Counter-Strike: Source Server Browser",
+    description:
+      "Browse every real Counter-Strike: Source server. Live player counts, maps and locations, with fake and spam servers filtered out.",
     type: "website",
     locale: "en_US",
-    siteName: "Play CSS",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Play CSS - Counter-Strike: Source Server Browser",
-    description: "Browse and find Counter-Strike: Source (CSS) servers worldwide. Real-time server information, player counts, maps, and locations.",
+    siteName: "play-css.com",
   },
   robots: "index, follow",
-  manifest: "/manifest.json",
   icons: {
     icon: "/favicon.ico",
   },
@@ -40,8 +51,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body className={inter.className}>{children}</body>
+    <html
+      lang="en"
+      className={`${barlow.variable} ${chakraPetch.variable} ${shareTechMono.variable}`}
+    >
+      <body>{children}</body>
     </html>
   );
 }

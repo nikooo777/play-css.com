@@ -26,31 +26,31 @@ export function CountryPreference({
   const countryName = value ? getCountryName(value) : null;
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-700/40">
+    <div className="border-t border-edge px-4 py-4 sm:px-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2">
             {value && <CountryFlag countryCode={value} />}
-            <h3 className="text-sm font-semibold text-gray-900 dark:text-white">
+            <h3 className="font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-ink">
               Country preference
             </h3>
           </div>
-          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+          <p className="mt-1.5 text-sm text-ink-2">
             {countryName
               ? `${countryName} servers appear first. Other sorting still applies within each group.`
               : 'Choose a country or identify yours once. Matching servers will appear first.'}
           </p>
-          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          <p className="mt-1 text-xs text-mut">
             Location lookup runs on this device and discards your coordinates. This does not measure ping.
           </p>
           <div aria-live="polite">
             {state === 'locating' && (
-              <p className="mt-2 text-sm text-indigo-600 dark:text-indigo-400">
-                Identifying your country…
+              <p className="mt-2 font-mono text-sm text-ct">
+                &gt; identifying your country…
               </p>
             )}
             {error && (
-              <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
+              <p className="mt-2 text-sm text-tr" role="alert">
                 {error}
               </p>
             )}
@@ -62,7 +62,7 @@ export function CountryPreference({
           </label>
           <select
             id="country-preference"
-            className="h-10 min-w-56 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+            className="h-10 min-w-56 rounded-[3px] border border-edge-2 bg-field px-3 py-2 text-sm text-ink focus:border-ct focus:outline-none"
             value={value}
             onChange={(event) => onChange(event.target.value)}
           >
@@ -75,7 +75,7 @@ export function CountryPreference({
           </select>
           <button
             type="button"
-            className="h-10 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 disabled:cursor-wait disabled:opacity-60"
+            className="h-10 rounded-[2px] border border-hud/60 px-4 font-display text-[11px] font-semibold uppercase tracking-wider text-hud transition-colors hover:bg-hud hover:text-bg disabled:cursor-wait disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-hud"
             disabled={state === 'locating'}
             onClick={onLocate}
           >

@@ -18,7 +18,7 @@ The frontend is built with Next.js, React, TypeScript, Tailwind CSS, and Bun.
 - VIP server highlighting
 - Downloadable Counter-Strike: Source server blacklist
 - Authenticated admin tools for adding and blacklisting servers
-- Responsive layout with light and dark color schemes
+- Responsive dark layout styled after the Source engine HUD
 
 ## Architecture
 
