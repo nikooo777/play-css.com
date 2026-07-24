@@ -43,38 +43,38 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isOpen) {
-      const fetchDetails = async () => {
-        try {
-          setLoading(true);
-          const response = await fetch(`/api/server/${server.ip}:${server.port}`);
-          if (!response.ok) {
-            throw new Error('Failed to fetch server details');
-          }
-          const data = await response.json();
-          // Sort players by connection time (descending)
-          setPlayers(data.sort((a: Player, b: Player) => b.connection_time - a.connection_time));
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch server details');
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchDetails();
-      
-      // Prevent body scroll when modal is open
-      document.body.style.overflow = 'hidden';
-    } else {
-      // Reset players and error state when modal closes
-      setPlayers([]);
-      setError(null);
-      setLoading(true);
-      document.body.style.overflow = 'unset';
+    if (!isOpen) {
+      return;
     }
 
-    // Cleanup on unmount
+    const controller = new AbortController();
+
+    async function fetchDetails() {
+      try {
+        const response = await fetch(`/api/server/${server.ip}:${server.port}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error('Failed to fetch server details');
+        }
+        const data = await response.json();
+        setPlayers(data.sort((a: Player, b: Player) => b.connection_time - a.connection_time));
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setError(error instanceof Error ? error.message : 'Failed to fetch server details');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchDetails();
+    document.body.style.overflow = 'hidden';
+
     return () => {
+      controller.abort();
       document.body.style.overflow = 'unset';
     };
   }, [isOpen, server.ip, server.port]);
@@ -259,4 +259,4 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
       </div>
     </div>
   );
-} 
+}

@@ -1,9 +1,17 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { ServerModal } from './ServerModal';
 import { AdminPanel } from './AdminPanel';
+import { CountryPreference } from './CountryPreference';
 import { CountryFlag } from '@/components/CountryFlag';
+import {
+  compareCountryPreference,
+  detectCurrentCountry,
+  getCountryName,
+  normalizeCountryCode,
+  type LocationRequestState,
+} from '@/utils/geolocation';
 
 // Interfaces
 interface Server {
@@ -26,6 +34,8 @@ interface Filters {
   ipFilter: string;
   stripSpecialChars: boolean;
 }
+
+type ToggleFilter = 'noBots' | 'hideRussian' | 'stripSpecialChars';
 
 // Constants
 const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',') || [];
@@ -53,9 +63,13 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     ipFilter: '',
     stripSpecialChars: true,
   });
+  const [countryPreference, setCountryPreference] = useState('');
+  const [locationState, setLocationState] = useState<LocationRequestState>('idle');
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const locationRequestId = useRef(0);
 
   // Memoize handlers to prevent unnecessary re-renders
   const handleCloseAdminPanel = useCallback(() => {
@@ -134,6 +148,79 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'asc');
   }, [sortField]);
 
+  const activateCountryPreference = useCallback((countryCode: string) => {
+    const normalized = normalizeCountryCode(countryCode);
+    setCountryPreference(normalized);
+    setLocationState(normalized ? 'active' : 'idle');
+    setLocationError(null);
+
+    if (normalized === 'RU') {
+      setFilters((currentFilters) => ({
+        ...currentFilters,
+        hideRussian: false,
+      }));
+    }
+  }, []);
+
+  const handleCountryPreference = useCallback((countryCode: string) => {
+    locationRequestId.current += 1;
+    activateCountryPreference(countryCode);
+  }, [activateCountryPreference]);
+
+  const handleUseLocation = useCallback(async () => {
+    const requestId = locationRequestId.current + 1;
+    locationRequestId.current = requestId;
+    setLocationState('locating');
+    setLocationError(null);
+
+    try {
+      const countryCode = await detectCurrentCountry();
+      if (locationRequestId.current === requestId) {
+        activateCountryPreference(countryCode);
+      }
+    } catch (error) {
+      if (locationRequestId.current === requestId) {
+        setLocationState('error');
+        setLocationError(
+          error instanceof Error
+            ? error.message
+            : 'Your country could not be detected. Choose it manually instead.'
+        );
+      }
+    }
+  }, [activateCountryPreference]);
+
+  const handleToggleFilter = useCallback((key: ToggleFilter, checked: boolean) => {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      [key]: checked,
+    }));
+
+    if (key === 'hideRussian' && checked && countryPreference === 'RU') {
+      locationRequestId.current += 1;
+      setCountryPreference('');
+      setLocationState('idle');
+      setLocationError(null);
+    }
+  }, [countryPreference]);
+
+  const countryCodes = useMemo(() => {
+    const codes = new Set<string>();
+
+    servers.forEach((server) => {
+      const countryCode = normalizeCountryCode(server.country);
+      if (countryCode) {
+        codes.add(countryCode);
+      }
+    });
+
+    if (countryPreference) {
+      codes.add(countryPreference);
+    }
+
+    return [...codes].sort((a, b) => getCountryName(a).localeCompare(getCountryName(b)));
+  }, [servers, countryPreference]);
+
   // Filter and sort servers
   const processedServers = useMemo(() => {
     // Filter servers
@@ -159,6 +246,15 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
 
     // Sort servers
     return [...filtered].sort((a, b) => {
+      const countryOrder = compareCountryPreference(
+        a.country,
+        b.country,
+        countryPreference
+      );
+      if (countryOrder !== 0) {
+        return countryOrder;
+      }
+
       const multiplier = sortDirection === 'asc' ? 1 : -1;
       const getValue = (server: Server, field: typeof sortField) => {
         switch (field) {
@@ -173,7 +269,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
       const valueB = getValue(b, sortField);
       return multiplier * (typeof valueA === 'string' ? valueA.localeCompare(valueB as string) : (valueA as number) - (valueB as number));
     });
-  }, [servers, filters, sortField, sortDirection]);
+  }, [servers, filters, sortField, sortDirection, countryPreference]);
 
   // Calculate stats
   const stats = useMemo(() => ({
@@ -306,29 +402,36 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
               />
             </div>
           </div>
+          <CountryPreference
+            countryCodes={countryCodes}
+            error={locationError}
+            state={locationState}
+            value={countryPreference}
+            onChange={handleCountryPreference}
+            onLocate={handleUseLocation}
+          />
           <div className="flex flex-wrap gap-x-6 gap-y-3 mt-4">
             {[
               { key: 'noBots' as const, label: 'Hide Bots', title: 'Hide servers with AI players' },
               { key: 'hideRussian' as const, label: 'Hide Russian' },
               { key: 'stripSpecialChars' as const, label: 'Clean Names' },
             ].map(({ key, label, title }) => (
-              <div
+              <label
                 key={key}
                 className="flex items-center space-x-3 cursor-pointer"
                 title={title}
-                onClick={() => setFilters({ ...filters, [key]: !filters[key] })}
               >
                 <div className="relative flex items-center">
                   <input
                     type="checkbox"
                     className="peer sr-only"
                     checked={filters[key]}
-                    onChange={(e) => setFilters({ ...filters, [key]: e.target.checked })}
+                    onChange={(event) => handleToggleFilter(key, event.target.checked)}
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
                 </div>
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300 select-none">{label}</span>
-              </div>
+              </label>
             ))}
           </div>
         </div>

@@ -41,10 +41,6 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
   // Banned servers
   const [bannedServers, setBannedServers] = useState<BannedServer[]>([]);
 
-  const getAuthHeader = () => {
-    return createAuthHeader(credentials);
-  };
-
   const clearMessages = () => {
     setError(null);
     setSuccess(null);
@@ -129,7 +125,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
       const response = await fetch('/api/admin/blacklist', {
         method: 'POST',
         headers: {
-          'Authorization': getAuthHeader(),
+          'Authorization': createAuthHeader(credentials),
         },
         body: formData,
       });
@@ -140,10 +136,6 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
         setSuccess(data.data || 'Server blacklisted successfully');
         setBlacklistAddress('');
         setBlacklistReason('none');
-        // Refresh banned servers list
-        if (activeTab === 'banned') {
-          fetchBannedServers();
-        }
       } else {
         setError(data.error || 'Failed to blacklist server');
       }
@@ -152,7 +144,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
     } finally {
       setLoading(false);
     }
-  }, [blacklistAddress, blacklistReason, activeTab, credentials]);
+  }, [blacklistAddress, blacklistReason, credentials]);
 
   const handleAddServer = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,7 +158,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
       const response = await fetch('/api/admin/add', {
         method: 'POST',
         headers: {
-          'Authorization': getAuthHeader(),
+          'Authorization': createAuthHeader(credentials),
         },
         body: formData,
       });
@@ -193,7 +185,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
     try {
       const response = await fetch('/api/admin/banned', {
         headers: {
-          'Authorization': getAuthHeader(),
+          'Authorization': createAuthHeader(credentials),
         },
       });
 
