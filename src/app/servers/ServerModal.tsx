@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { CountryFlag } from '@/components/CountryFlag';
+import { useModalDialog } from '@/utils/useModalDialog';
+import { type Server } from '@/utils/servers';
 
 interface Player {
   id: number;
@@ -11,16 +13,7 @@ interface Player {
 }
 
 interface ServerModalProps {
-  server: {
-    ip: string;
-    port: string;
-    name: string;
-    map: string;
-    players: number;
-    max_players: number;
-    bots: number;
-    country: string;
-  };
+  server: Server;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -73,38 +66,13 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
     }
 
     fetchDetails();
-    document.body.style.overflow = 'hidden';
 
     return () => {
       controller.abort();
-      document.body.style.overflow = 'unset';
     };
   }, [isOpen, server.ip, server.port]);
 
-  // Handle click outside to close modal
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
-        onClose();
-      }
-    };
-
-    const handleEscapeKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleEscapeKey);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscapeKey);
-    };
-  }, [isOpen, onClose]);
+  useModalDialog(modalRef, isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -115,7 +83,8 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Server details"
-        className="mx-auto my-auto flex max-h-[95vh] w-full max-w-2xl flex-col rounded border border-edge-2 bg-panel shadow-2xl"
+        tabIndex={-1}
+        className="mx-auto my-auto flex max-h-[95vh] w-full max-w-2xl flex-col rounded border border-edge-2 bg-panel shadow-2xl focus:outline-none"
       >
         {/* Sticky Header */}
         <div className="flex-shrink-0 rounded-t border-b border-edge bg-panel p-4 sm:p-6">

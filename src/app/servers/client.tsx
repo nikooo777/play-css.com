@@ -6,39 +6,25 @@ import { AdminPanel } from './AdminPanel';
 import { CountryPreference } from './CountryPreference';
 import { CountryFlag } from '@/components/CountryFlag';
 import {
-  compareCountryPreference,
   detectCurrentCountry,
   getCountryName,
   normalizeCountryCode,
   type LocationRequestState,
 } from '@/utils/geolocation';
-
-// Interfaces
-interface Server {
-  name: string;
-  map: string;
-  players: number;
-  max_players: number;
-  bots: number;
-  ip: string;
-  port: string;
-  country: string;
-}
-
-interface Filters {
-  status: 'all' | 'empty' | 'full' | 'partial';
-  noBots: boolean;
-  hideRussian: boolean;
-  mapFilter: string;
-  nameFilter: string;
-  ipFilter: string;
-  stripSpecialChars: boolean;
-}
+import {
+  processServers,
+  stripSpecialChars,
+  type Server,
+  type ServerFilters,
+  type SortDirection,
+  type SortField,
+} from '@/utils/servers';
+import { clearLegacyAdminCookie } from '@/utils/auth';
 
 type ToggleFilter = 'noBots' | 'hideRussian' | 'stripSpecialChars';
 
 // Constants
-const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',') || [];
+const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',').map(ip => ip.trim()).filter(Boolean) ?? [];
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
 // Shared styles
@@ -46,11 +32,6 @@ const fieldClass = 'w-full h-10 px-3 rounded-[3px] border border-edge-2 bg-field
 const labelClass = 'block font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-mut mb-1.5';
 const ghostButtonClass = 'inline-flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-wider text-mut hover:text-ink border border-edge hover:border-edge-2 bg-panel rounded-[3px] px-3 py-2 transition-colors';
 const connectButtonClass = 'inline-flex items-center font-display text-[11px] font-semibold uppercase tracking-wider text-hud border border-hud/60 hover:bg-hud hover:text-bg rounded-[2px] px-3 py-1.5 transition-colors';
-
-// Utility Functions
-const stripSpecialChars = (str: string): string => {
-  return str.replace(/[^\x20-\x7EÀ-ɏͰ-ϿЀ-ӿḀ-ỿ一-鿿぀-ゟ゠-ヿ가-힯]/g, '');
-};
 
 function CapacityBar({ players, maxPlayers }: { players: number; maxPlayers: number }) {
   const percentage = maxPlayers > 0 ? Math.min(100, Math.round((players / maxPlayers) * 100)) : 0;
@@ -76,9 +57,9 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [sortField, setSortField] = useState<'name' | 'map' | 'players' | 'ip' | 'country'>('players');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [filters, setFilters] = useState<Filters>({
+  const [sortField, setSortField] = useState<SortField>('players');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [filters, setFilters] = useState<ServerFilters>({
     status: 'all',
     noBots: false,
     hideRussian: true,
@@ -93,7 +74,30 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
+  const [filtersEl, setFiltersEl] = useState<HTMLElement | null>(null);
+  const [filtersHeight, setFiltersHeight] = useState(0);
   const locationRequestId = useRef(0);
+  const serversRef = useRef(initialServers);
+  const fetchRequestId = useRef(0);
+  const activeFetchCount = useRef(0);
+
+  // One-time cleanup of the pre-sessionStorage credential cookie
+  useEffect(() => {
+    clearLegacyAdminCookie();
+  }, []);
+
+  // The sticky table header sits below the sticky filter bar, so it needs
+  // the bar's rendered height as its top offset
+  useEffect(() => {
+    if (!filtersEl) {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => setFiltersHeight(filtersEl.offsetHeight));
+    observer.observe(filtersEl);
+    return () => observer.disconnect();
+  }, [filtersEl]);
 
   // Memoize handlers to prevent unnecessary re-renders
   const handleCloseAdminPanel = useCallback(() => {
@@ -127,46 +131,79 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     }
   }, []);
 
-  // Fetch servers with background refresh support
+  // Fetch servers with background refresh support. Background refreshes are
+  // skipped while any request is in flight (so they can never supersede a
+  // foreground retry), and a superseded request never applies its result
+  // over a newer one.
   const fetchServers = useCallback(async (isBackgroundRefresh = false) => {
-    try {
-      if (isBackgroundRefresh) {
-        setIsRefreshing(true);
-      } else {
-        setLoading(true);
-      }
+    if (isBackgroundRefresh && activeFetchCount.current > 0) {
+      return;
+    }
 
+    activeFetchCount.current += 1;
+    const requestId = fetchRequestId.current + 1;
+    fetchRequestId.current = requestId;
+
+    if (isBackgroundRefresh) {
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
       const response = await fetch('/api/servers');
       if (!response.ok) throw new Error('Failed to fetch servers');
-      const data: Server[] = await response.json();
+      const data: Server[] = (await response.json()) ?? [];
 
+      if (fetchRequestId.current !== requestId) return;
+
+      serversRef.current = data;
       setServers(data);
       setError(null);
+      setSyncFailed(false);
     } catch (err) {
-      // Only show errors if it's not a background refresh or if there are no existing servers
-      if (!isBackgroundRefresh || servers.length === 0) {
+      if (fetchRequestId.current !== requestId) return;
+
+      // Only take over the screen when there is no existing data to keep showing
+      if (!isBackgroundRefresh || serversRef.current.length === 0) {
         setError(err instanceof Error ? err.message : 'Failed to fetch servers');
+      } else {
+        setSyncFailed(true);
       }
     } finally {
-      if (isBackgroundRefresh) {
+      activeFetchCount.current -= 1;
+      if (fetchRequestId.current === requestId) {
         setIsRefreshing(false);
-      } else {
         setLoading(false);
         setIsInitialLoad(false);
       }
     }
-  }, [servers.length]);
+  }, []);
 
   const handleRetry = useCallback(() => {
     fetchServers(false);
   }, [fetchServers]);
 
-  // Setup server refresh (don't fetch immediately since we have initialServers)
+  // Setup server refresh (don't fetch immediately since we have initialServers).
+  // Skips refreshes while the tab is hidden and catches up as soon as it becomes visible.
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchServers(true); // Background refresh
+      if (document.visibilityState === 'visible') {
+        fetchServers(true); // Background refresh
+      }
     }, REFRESH_INTERVAL);
-    return () => clearInterval(interval);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchServers(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [fetchServers]);
 
   // Sorting handler
@@ -249,54 +286,10 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   }, [servers, countryPreference]);
 
   // Filter and sort servers
-  const processedServers = useMemo(() => {
-    // Filter servers
-    const filtered = servers.filter(server => {
-      const name = filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name;
-      const map = filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map;
-
-      if (filters.status !== 'all') {
-        if (filters.status === 'empty' && server.players > 0) return false;
-        if (filters.status === 'full' && server.players < server.max_players) return false;
-        if (filters.status === 'partial' && (server.players === 0 || server.players === server.max_players)) return false;
-      }
-
-      if (filters.hideRussian && server.country.toUpperCase() === 'RU') return false;
-
-      return !(
-        (filters.noBots && server.bots > 0) ||
-        (filters.mapFilter && !map.toLowerCase().includes(filters.mapFilter.toLowerCase())) ||
-        (filters.nameFilter && !name.toLowerCase().includes(filters.nameFilter.toLowerCase())) ||
-        (filters.ipFilter && !server.ip.includes(filters.ipFilter))
-      );
-    });
-
-    // Sort servers
-    return [...filtered].sort((a, b) => {
-      const countryOrder = compareCountryPreference(
-        a.country,
-        b.country,
-        countryPreference
-      );
-      if (countryOrder !== 0) {
-        return countryOrder;
-      }
-
-      const multiplier = sortDirection === 'asc' ? 1 : -1;
-      const getValue = (server: Server, field: typeof sortField) => {
-        switch (field) {
-          case 'name': return filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name;
-          case 'map': return filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map;
-          case 'players': return server.players;
-          case 'ip': return server.ip;
-          case 'country': return server.country || '';
-        }
-      };
-      const valueA = getValue(a, sortField);
-      const valueB = getValue(b, sortField);
-      return multiplier * (typeof valueA === 'string' ? valueA.localeCompare(valueB as string) : (valueA as number) - (valueB as number));
-    });
-  }, [servers, filters, sortField, sortDirection, countryPreference]);
+  const processedServers = useMemo(
+    () => processServers(servers, filters, sortField, sortDirection, countryPreference),
+    [servers, filters, sortField, sortDirection, countryPreference]
+  );
 
   // Calculate stats
   const stats = useMemo(() => ({
@@ -390,13 +383,17 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
               Players in-game
             </span>
           </div>
-          <div className="w-full font-mono text-xs text-mut sm:ml-auto sm:w-auto" aria-live="polite">
-            {isRefreshing ? '> syncing server list…' : '> live — auto-refresh 30s'}
+          <div className="w-full font-mono text-xs sm:ml-auto sm:w-auto" aria-live="polite">
+            {syncFailed ? (
+              <span className="text-tr">&gt; sync failed — retrying in 30s</span>
+            ) : (
+              <span className="text-mut">{isRefreshing ? '> syncing server list…' : '> live — auto-refresh 30s'}</span>
+            )}
           </div>
         </section>
 
         {/* Filters */}
-        <section className="rise mb-4 rounded border border-edge bg-panel [animation-delay:120ms]">
+        <section ref={setFiltersEl} className="rise sticky top-0 z-20 mb-4 rounded border border-edge bg-panel [animation-delay:120ms]">
           <div className="p-4 sm:p-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
@@ -405,7 +402,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                   id="filter-status"
                   className={fieldClass}
                   value={filters.status}
-                  onChange={(e) => setFilters({ ...filters, status: e.target.value as Filters['status'] })}
+                  onChange={(e) => setFilters({ ...filters, status: e.target.value as ServerFilters['status'] })}
                 >
                   <option value="all">All servers</option>
                   <option value="empty">Empty</option>
@@ -480,7 +477,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         </section>
 
         {/* Server List */}
-        <section className="rise overflow-hidden rounded border border-edge bg-panel [animation-delay:180ms]">
+        <section className="rise overflow-clip rounded border border-edge bg-panel [animation-delay:180ms]">
           {processedServers.length === 0 ? (
             <div className="px-4 py-14 text-center">
               <p className="font-mono text-sm text-mut">] 0 servers match the current filters</p>
@@ -490,9 +487,8 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
             <>
               {/* Desktop Table View */}
               <div className="hidden lg:block">
-                <div className="scrollbar-thin max-h-[600px] overflow-y-auto">
-                  <table className="w-full table-fixed">
-                    <thead className="sticky top-0 z-10 bg-panel-2">
+                <table className="w-full table-fixed">
+                    <thead className="sticky z-10 bg-panel-2" style={{ top: filtersHeight }}>
                       <tr className="border-b border-edge">
                         {[
                           { field: 'name', label: 'Server Name', width: 'w-[35%]' },
@@ -504,15 +500,18 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                           <th
                             key={field}
                             aria-sort={sortField === field ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}
-                            className={`${width} cursor-pointer select-none px-4 py-2.5 text-left font-display text-[11px] font-semibold uppercase tracking-[0.15em] ${
-                              sortField === field ? 'text-ct' : 'text-mut hover:text-ink'
-                            }`}
-                            onClick={() => handleSort(field as typeof sortField)}
+                            className={`${width} p-0 text-left`}
                           >
-                            <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSort(field as SortField)}
+                              className={`flex w-full cursor-pointer select-none items-center gap-1 px-4 py-2.5 font-display text-[11px] font-semibold uppercase tracking-[0.15em] ${
+                                sortField === field ? 'text-ct' : 'text-mut hover:text-ink'
+                              }`}
+                            >
                               {label}
-                              <SortIcon field={field as typeof sortField} />
-                            </div>
+                              <SortIcon field={field as SortField} />
+                            </button>
                           </th>
                         ))}
                         <th className="w-[10%] px-4 py-2.5 text-center font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-mut">
@@ -530,10 +529,18 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                           onClick={() => setSelectedServer(server)}
                         >
                           <td className="px-4 py-2.5">
-                            <div className="flex items-center">
-                              <div className="truncate text-sm font-medium text-ink" title={server.name}>
+                            <div className="flex min-w-0 items-center">
+                              <button
+                                type="button"
+                                className="min-w-0 truncate text-left text-sm font-medium text-ink"
+                                title={server.name}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedServer(server);
+                                }}
+                              >
                                 {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
-                              </div>
+                              </button>
                               {VIP_IPS.includes(server.ip) && <VipTag />}
                             </div>
                           </td>
@@ -575,15 +582,12 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                         </tr>
                       ))}
                     </tbody>
-                  </table>
-                </div>
+                </table>
               </div>
 
               {/* Mobile Card View */}
               <div className="lg:hidden">
-                <div className="scrollbar-thin max-h-[600px] overflow-y-auto">
-                  <div>
-                    {processedServers.map((server) => (
+                {processedServers.map((server) => (
                       <div
                         key={`${server.ip}:${server.port}`}
                         className={`cursor-pointer border-b border-edge/60 p-4 transition-colors active:bg-panel-2 ${
@@ -593,12 +597,20 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <div className="min-w-0 flex-1">
-                            <div className="mb-1 flex items-center">
-                              <h3 className="truncate text-sm font-semibold text-ink">
+                            <h3 className="mb-1 flex items-center">
+                              <button
+                                type="button"
+                                className="min-w-0 truncate text-left text-sm font-semibold text-ink"
+                                title={server.name}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedServer(server);
+                                }}
+                              >
                                 {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
-                              </h3>
+                              </button>
                               {VIP_IPS.includes(server.ip) && <VipTag />}
-                            </div>
+                            </h3>
                             <div className="flex items-center gap-4 text-sm">
                               <span className="font-mono text-[13px] text-ink-2">
                                 {filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map}
@@ -634,9 +646,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                           </a>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </>
           )}

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, memo, useEffect } from 'react';
+import { useState, useCallback, memo, useEffect, useRef } from 'react';
 import { saveAdminCredentials, loadAdminCredentials, clearAdminCredentials, createAuthHeader, type AdminCredentials } from '@/utils/auth';
+import { useModalDialog } from '@/utils/useModalDialog';
 
 interface BannedServer {
   address: string;
@@ -45,6 +46,8 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
   // Banned servers
   const [bannedServers, setBannedServers] = useState<BannedServer[]>([]);
 
+  const panelRef = useRef<HTMLDivElement>(null);
+
   const clearMessages = () => {
     setError(null);
     setSuccess(null);
@@ -76,7 +79,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
         setIsAuthenticated(true);
         setCredentials(testCredentials);
         const data = await response.json();
-        setBannedServers(data);
+        setBannedServers(data ?? []);
         if (isAutoLogin) {
           setSuccess('Welcome back! Auto-logged in with saved credentials.');
         } else {
@@ -195,7 +198,7 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
 
       if (response.ok) {
         const data = await response.json();
-        setBannedServers(data);
+        setBannedServers(data ?? []);
       } else {
         setError('Failed to fetch banned servers');
       }
@@ -223,22 +226,27 @@ export const AdminPanel = memo(function AdminPanel({ isOpen, onClose }: AdminPan
     setSuccess('Logged out successfully');
   }, []);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     // Don't clear authentication state when closing - keep user logged in
     setActiveTab('blacklist');
-    clearMessages();
+    setError(null);
+    setSuccess(null);
     onClose();
-  };
+  }, [onClose]);
+
+  useModalDialog(panelRef, isOpen, handleClose);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-[2px]">
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label="Admin panel"
-        className="mx-auto flex max-h-[95vh] w-full max-w-4xl flex-col rounded border border-edge-2 bg-panel shadow-2xl"
+        tabIndex={-1}
+        className="mx-auto flex max-h-[95vh] w-full max-w-4xl flex-col rounded border border-edge-2 bg-panel shadow-2xl focus:outline-none"
       >
         <div className="scrollbar-thin flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="mb-6 flex items-start justify-between">

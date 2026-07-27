@@ -2,14 +2,15 @@ import { ServerBrowserClient } from './servers/client';
 
 async function getServers() {
   const response = await fetch(`${process.env.API_URL}/servers`, {
-    cache: 'no-store' // Disable caching to always get fresh data
+    cache: 'no-store', // Disable caching to always get fresh data
+    signal: AbortSignal.timeout(10_000),
   });
   
   if (!response.ok) {
     throw new Error('Failed to fetch servers');
   }
-  
-  return response.json();
+
+  return (await response.json()) ?? [];
 }
 
 export default async function Home() {

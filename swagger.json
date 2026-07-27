@@ -210,6 +210,21 @@
               }
             }
           },
+          "403": {
+            "description": "IP is whitelisted and cannot be banned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "404": {
             "description": "Server not found",
             "content": {

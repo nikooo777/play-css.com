@@ -1,23 +1,21 @@
-// Simple base64 encoding/decoding for credential storage
-// Note: This is not encryption, just encoding. In production, consider more secure methods.
+// Credentials are kept in sessionStorage (per-tab, gone when the tab closes) and are
+// base64-encoded, not encrypted.
 
-const ADMIN_COOKIE_NAME = 'admin_credentials';
-const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
+const ADMIN_STORAGE_KEY = 'admin_credentials';
+const LEGACY_COOKIE_NAME = 'admin_credentials';
 
 export interface AdminCredentials {
   username: string;
   password: string;
 }
 
+export function clearLegacyAdminCookie(): void {
+  document.cookie = `${LEGACY_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; samesite=strict`;
+}
+
 export function saveAdminCredentials(credentials: AdminCredentials): void {
   try {
-    // Encode credentials as base64
-    const encoded = btoa(JSON.stringify(credentials));
-    
-    // Set cookie with secure options
-    document.cookie = `${ADMIN_COOKIE_NAME}=${encoded}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=strict${
-      window.location.protocol === 'https:' ? '; secure' : ''
-    }`;
+    sessionStorage.setItem(ADMIN_STORAGE_KEY, btoa(JSON.stringify(credentials)));
   } catch (error) {
     console.warn('Failed to save admin credentials:', error);
   }
@@ -25,26 +23,19 @@ export function saveAdminCredentials(credentials: AdminCredentials): void {
 
 export function loadAdminCredentials(): AdminCredentials | null {
   try {
-    // Get cookie value
-    const cookies = document.cookie.split(';');
-    const adminCookie = cookies.find(cookie => 
-      cookie.trim().startsWith(`${ADMIN_COOKIE_NAME}=`)
-    );
-    
-    if (!adminCookie) {
+    clearLegacyAdminCookie();
+
+    const encoded = sessionStorage.getItem(ADMIN_STORAGE_KEY);
+    if (!encoded) {
       return null;
     }
-    
-    // Extract and decode credentials
-    const encoded = adminCookie.split('=')[1];
-    const decoded = atob(encoded);
-    const credentials = JSON.parse(decoded);
-    
-    // Validate credentials structure
+
+    const credentials = JSON.parse(atob(encoded));
+
     if (credentials && typeof credentials.username === 'string' && typeof credentials.password === 'string') {
       return credentials;
     }
-    
+
     return null;
   } catch (error) {
     console.warn('Failed to load admin credentials:', error);
@@ -54,8 +45,8 @@ export function loadAdminCredentials(): AdminCredentials | null {
 
 export function clearAdminCredentials(): void {
   try {
-    // Clear cookie by setting expiration to past date
-    document.cookie = `${ADMIN_COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; samesite=strict`;
+    sessionStorage.removeItem(ADMIN_STORAGE_KEY);
+    clearLegacyAdminCookie();
   } catch (error) {
     console.warn('Failed to clear admin credentials:', error);
   }
