@@ -115,6 +115,8 @@ docker compose --env-file .env ps
 
 `MAXMIND_KEY` is optional. Existing country values remain usable without it, but newly discovered IPs cannot be enriched until a valid key is configured.
 
+`PLAY_CSS_FETCHER_STEAM_API_KEY` is optional when serving the existing database. Without it, the backend continues monitoring persisted servers but skips startup discovery.
+
 The backend applies database migrations during startup. Back up the existing database before replacing the backend because the upgraded schema cannot be used by older binaries after migration.
 
 For a server that pulls prebuilt images, set `BACKEND_IMAGE` and `FRONTEND_IMAGE`, then disable the local build definitions with the production override:
