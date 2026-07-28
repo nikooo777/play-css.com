@@ -20,6 +20,7 @@ export async function GET(
         'X-Forwarded-For': realIp,
         'X-Real-IP': realIp,
       },
+      signal: AbortSignal.timeout(10_000),
     });
     
     if (!response.ok) {

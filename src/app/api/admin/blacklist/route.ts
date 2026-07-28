@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
         address,
         reason: reason || 'none'
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {

@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
 import { ServerModal } from './ServerModal';
 import { AdminPanel } from './AdminPanel';
 import { CountryPreference } from './CountryPreference';
-import { CountryFlag } from '@/components/CountryFlag';
+import { CountryFlag, CountryFlagDefs } from '@/components/CountryFlag';
 import {
   detectCurrentCountry,
   getCountryName,
@@ -43,6 +43,27 @@ function CapacityBar({ players, maxPlayers }: { players: number; maxPlayers: num
   );
 }
 
+// Rows sent in the server-rendered HTML; the rest mount right after hydration
+const SSR_ROW_LIMIT = 120;
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+function subscribeToDesktopQuery(onChange: () => void) {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
+}
+
+// null during SSR/hydration, where both views render and CSS picks one;
+// after mount only the active view stays in the DOM
+function useIsDesktop(): boolean | null {
+  return useSyncExternalStore<boolean | null>(
+    subscribeToDesktopQuery,
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => null
+  );
+}
+
 function VipTag() {
   return (
     <span className="ml-2 inline-flex items-center rounded-[2px] border border-hud/50 px-1 py-px font-display text-[10px] font-semibold uppercase tracking-wider text-hud">
@@ -77,6 +98,8 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [syncFailed, setSyncFailed] = useState(false);
   const [filtersEl, setFiltersEl] = useState<HTMLElement | null>(null);
   const [filtersHeight, setFiltersHeight] = useState(0);
+  const isDesktop = useIsDesktop();
+  const [showFullList, setShowFullList] = useState(false);
   const locationRequestId = useRef(0);
   const serversRef = useRef(initialServers);
   const fetchRequestId = useRef(0);
@@ -85,6 +108,11 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   // One-time cleanup of the pre-sessionStorage credential cookie
   useEffect(() => {
     clearLegacyAdminCookie();
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowFullList(true), 0);
+    return () => clearTimeout(timer);
   }, []);
 
   // The sticky table header sits below the sticky filter bar, so it needs
@@ -151,7 +179,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     }
 
     try {
-      const response = await fetch('/api/servers');
+      const response = await fetch('/api/servers', { signal: AbortSignal.timeout(15_000) });
       if (!response.ok) throw new Error('Failed to fetch servers');
       const data: Server[] = (await response.json()) ?? [];
 
@@ -297,6 +325,8 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     totalServers: processedServers.length,
   }), [processedServers]);
 
+  const visibleServers = showFullList ? processedServers : processedServers.slice(0, SSR_ROW_LIMIT);
+
   // Loading state
   if (isInitialLoad && loading) {
     return (
@@ -333,6 +363,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
 
   return (
     <div className="min-h-screen px-3 py-4 sm:px-6 sm:py-6 lg:px-8">
+      <CountryFlagDefs countryCodes={countryCodes} />
       <div className="max-w-7xl mx-auto">
         {/* Command bar */}
         <header className="rise mb-4 flex items-start justify-between gap-3">
@@ -383,17 +414,18 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
               Players in-game
             </span>
           </div>
-          <div className="w-full font-mono text-xs sm:ml-auto sm:w-auto" aria-live="polite">
-            {syncFailed ? (
-              <span className="text-tr">&gt; sync failed — retrying in 30s</span>
-            ) : (
+          <div className="w-full font-mono text-xs sm:ml-auto sm:w-auto">
+            <span aria-live="polite" className="text-tr">
+              {syncFailed ? '> sync failed — retrying in 30s' : ''}
+            </span>
+            {!syncFailed && (
               <span className="text-mut">{isRefreshing ? '> syncing server list…' : '> live — auto-refresh 30s'}</span>
             )}
           </div>
         </section>
 
         {/* Filters */}
-        <section ref={setFiltersEl} className="rise sticky top-0 z-20 mb-4 rounded border border-edge bg-panel [animation-delay:120ms]">
+        <section ref={setFiltersEl} className="rise z-20 mb-4 rounded border border-edge bg-panel [animation-delay:120ms] lg:sticky lg:top-0">
           <div className="p-4 sm:p-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
@@ -486,6 +518,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
           ) : (
             <>
               {/* Desktop Table View */}
+              {isDesktop !== false && (
               <div className="hidden lg:block">
                 <table className="w-full table-fixed">
                     <thead className="sticky z-10 bg-panel-2" style={{ top: filtersHeight }}>
@@ -520,7 +553,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                       </tr>
                     </thead>
                     <tbody>
-                      {processedServers.map((server) => (
+                      {visibleServers.map((server) => (
                         <tr
                           key={`${server.ip}:${server.port}`}
                           className={`cursor-pointer border-b border-edge/60 transition-colors hover:bg-panel-2 ${
@@ -567,7 +600,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                           </td>
                           <td className="px-4 py-2.5">
                             <div className="flex items-center justify-center">
-                              <CountryFlag countryCode={server.country} />
+                              <CountryFlag countryCode={server.country} sprite />
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-center">
@@ -584,10 +617,12 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                     </tbody>
                 </table>
               </div>
+              )}
 
               {/* Mobile Card View */}
+              {isDesktop !== true && (
               <div className="lg:hidden">
-                {processedServers.map((server) => (
+                {visibleServers.map((server) => (
                       <div
                         key={`${server.ip}:${server.port}`}
                         className={`cursor-pointer border-b border-edge/60 p-4 transition-colors active:bg-panel-2 ${
@@ -616,7 +651,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                                 {filters.stripSpecialChars ? stripSpecialChars(server.map) : server.map}
                               </span>
                               <span className="flex items-center gap-1.5 text-mut">
-                                <CountryFlag countryCode={server.country} />
+                                <CountryFlag countryCode={server.country} sprite />
                                 {server.country}
                               </span>
                             </div>
@@ -648,6 +683,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                       </div>
                 ))}
               </div>
+              )}
             </>
           )}
         </section>

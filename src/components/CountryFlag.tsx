@@ -3,18 +3,40 @@
 import * as Flags from 'country-flag-icons/react/3x2';
 import { getCountryName, normalizeCountryCode } from '@/utils/geolocation';
 
+const FLAG_VIEW_BOX = '0 0 513 342';
+
+const flagComponents = Flags as Record<string, React.ComponentType<{ className?: string }> | undefined>;
+
 interface CountryFlagProps {
   countryCode: string;
   className?: string;
+  sprite?: boolean;
 }
 
-export function CountryFlag({ countryCode, className = "w-6 h-4" }: CountryFlagProps) {
+// Renders each unique flag once so repeated flags can reference it via <use>
+// instead of inlining the full SVG per row
+export function CountryFlagDefs({ countryCodes }: { countryCodes: string[] }) {
+  return (
+    <svg className="hidden" aria-hidden="true">
+      <defs>
+        {countryCodes.map((code) => {
+          const FlagComponent = flagComponents[code];
+          return FlagComponent ? (
+            <symbol key={code} id={`flag-${code}`} viewBox={FLAG_VIEW_BOX}>
+              <FlagComponent />
+            </symbol>
+          ) : null;
+        })}
+      </defs>
+    </svg>
+  );
+}
+
+export function CountryFlag({ countryCode, className = "w-6 h-4", sprite = false }: CountryFlagProps) {
   const code = normalizeCountryCode(countryCode);
   const countryName = getCountryName(code);
 
-  const FlagComponent = code
-    ? (Flags as Record<string, React.ComponentType<{ className?: string }>>)[code] || null
-    : null;
+  const FlagComponent = code ? flagComponents[code] || null : null;
 
   const defaultFlag = (
     <svg className={`${className} text-mut`} viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -22,9 +44,19 @@ export function CountryFlag({ countryCode, className = "w-6 h-4" }: CountryFlagP
     </svg>
   );
 
+  const flag = !FlagComponent ? (
+    defaultFlag
+  ) : sprite ? (
+    <svg viewBox={FLAG_VIEW_BOX} className={className}>
+      <use href={`#flag-${code}`} />
+    </svg>
+  ) : (
+    <FlagComponent className={className} />
+  );
+
   return (
     <div className="group relative">
-      {FlagComponent ? <FlagComponent className={className} /> : defaultFlag}
+      {flag}
       <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-panel-2 border border-edge-2 text-ink text-xs rounded-[3px] opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none z-20">
         {countryName}
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-panel-2 border-b border-r border-edge-2"></div>

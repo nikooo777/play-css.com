@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   try {
-    const response = await fetch(`${process.env.API_URL}/blacklist`);
+    const response = await fetch(`${process.env.API_URL}/blacklist`, {
+      signal: AbortSignal.timeout(10_000),
+    });
 
     if (!response.ok) {
       throw new Error('Failed to fetch blacklist');

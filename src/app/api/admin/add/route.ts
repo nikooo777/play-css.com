@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       body: new URLSearchParams({
         address
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!response.ok) {
