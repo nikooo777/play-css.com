@@ -17,7 +17,8 @@ The frontend is built with Next.js, React, TypeScript, Tailwind CSS, and Bun.
 - `steam://connect` links for joining servers
 - VIP server highlighting
 - Downloadable Counter-Strike: Source server blacklist
-- Authenticated admin tools for adding and blacklisting servers
+- Authenticated admin tools for adding, banning, unbanning, and recovering servers
+- Enforcement observations, durable ban details, and legacy audit summaries
 - Responsive dark layout styled after the Source engine HUD
 
 ## Architecture
@@ -27,6 +28,8 @@ This repository contains the Next.js web application and its API proxy routes. I
 The initial server list is fetched by Next.js during server rendering. Browser refreshes, server details, blacklist downloads, and admin actions go through route handlers under `/api`, which forward requests to the upstream service configured by `API_URL`.
 
 The required backend contract is documented in [`swagger.json`](./swagger.json). A compatible backend must be running before this application can load server data.
+
+Admin mutations are proxied without rewriting their response bodies. The frontend creates one lowercase UUID idempotency key for each user action and reuses it only when the backend says that the result is uncertain. This preserves operation details such as `operation_id`, `replayed`, `publication_status`, and `retry_same_key`.
 
 ## Country preference
 
@@ -85,11 +88,51 @@ Open [http://localhost:3000](http://localhost:3000).
 | `bun run lint` | Run ESLint. |
 | `bun run test` | Run the Bun test suite. |
 
-## Production
+## Container deployment
 
-Set the environment variables, then build and start the application:
+The production Compose stack builds this frontend and the backend from adjacent repositories:
+
+```text
+parent-directory/
+├── play-css.com/
+└── source-engine-server-list/
+```
+
+The frontend is the only published service. It binds to `127.0.0.1:3000` by default so a host-level reverse proxy can terminate TLS and forward traffic to it. The backend is reachable only from the frontend network and connects to the existing host MySQL service through `host.docker.internal`. The downloaded GeoIP database uses a named volume.
+
+The application network uses `172.29.77.0/24` by default. The host firewall must permit that subnet to reach only MySQL port 3306. Change `APPLICATION_SUBNET` if it conflicts with an existing route or Docker network.
+
+Copy the environment template and replace every placeholder:
 
 ```bash
-bun run build
-bun run start
+cp .env.example .env
+docker compose --env-file .env config
+docker compose --env-file .env up -d --build
+docker compose --env-file .env ps
+```
+
+`PLAY_CSS_WHITELIST` must be present. Leave it blank for an authoritative empty whitelist, or provide a comma-separated list of bare IP addresses. Treat changes to that value as enforcement changes.
+
+`MAXMIND_KEY` is optional. Existing country values remain usable without it, but newly discovered IPs cannot be enriched until a valid key is configured.
+
+The backend applies database migrations during startup. Back up the existing database before replacing the backend because the upgraded schema cannot be used by older binaries after migration.
+
+For a server that pulls prebuilt images, set `BACKEND_IMAGE` and `FRONTEND_IMAGE`, then disable the local build definitions with the production override:
+
+```bash
+docker compose -f compose.yaml -f compose.production.yaml --env-file .env pull
+docker compose -f compose.yaml -f compose.production.yaml --env-file .env up -d
+```
+
+After updating either repository, rebuild and replace the affected containers:
+
+```bash
+docker compose --env-file .env up -d --build --remove-orphans
+```
+
+Check container health and recent output with:
+
+```bash
+docker compose --env-file .env ps
+docker compose --env-file .env logs --tail=100 backend frontend
 ```

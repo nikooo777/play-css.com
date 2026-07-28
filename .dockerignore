@@ -1,0 +1,15 @@
+.git
+.github
+.agents
+.claude
+.codex*
+.idea
+.next
+.env*
+node_modules
+coverage
+logs
+*.log
+*.pem
+*.tsbuildinfo
+aidocs

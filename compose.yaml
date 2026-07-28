@@ -1,0 +1,92 @@
+name: play-css
+
+services:
+  backend:
+    image: ${BACKEND_IMAGE:-play-css/backend:local}
+    build:
+      context: ../source-engine-server-list
+    restart: unless-stopped
+    init: true
+    read_only: true
+    environment:
+      GIN_MODE: release
+      MAXMIND_KEY: ${MAXMIND_KEY:-}
+      TMPDIR: /var/lib/play-css
+      PLAY_CSS_ADMIN_USERNAME: ${PLAY_CSS_ADMIN_USERNAME:?Set PLAY_CSS_ADMIN_USERNAME in .env}
+      PLAY_CSS_ADMIN_PASSWORD: ${PLAY_CSS_ADMIN_PASSWORD:?Set PLAY_CSS_ADMIN_PASSWORD in .env}
+      PLAY_CSS_DATABASE_DBNAME: ${PLAY_CSS_DATABASE_DBNAME:-play_css}
+      PLAY_CSS_DATABASE_HOST: ${PLAY_CSS_DATABASE_HOST:-host.docker.internal}
+      PLAY_CSS_DATABASE_PASSWORD: ${PLAY_CSS_DATABASE_PASSWORD:?Set PLAY_CSS_DATABASE_PASSWORD in .env}
+      PLAY_CSS_DATABASE_PORT: ${PLAY_CSS_DATABASE_PORT:-3306}
+      PLAY_CSS_DATABASE_USERNAME: ${PLAY_CSS_DATABASE_USERNAME:-play_css}
+      PLAY_CSS_FETCHER_DETECTOR_MODE: ${PLAY_CSS_FETCHER_DETECTOR_MODE:-observe}
+      PLAY_CSS_FETCHER_RETENTION: ${PLAY_CSS_FETCHER_RETENTION:-72h}
+      PLAY_CSS_FETCHER_STEAM_API_KEY: ${PLAY_CSS_FETCHER_STEAM_API_KEY:?Set PLAY_CSS_FETCHER_STEAM_API_KEY in .env}
+      PLAY_CSS_WHITELIST: ${PLAY_CSS_WHITELIST?Set PLAY_CSS_WHITELIST in .env, blank for none}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - backend-geoip:/var/lib/play-css
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8888/servers
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - application
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-play-css/frontend:local}
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_VIP_IPS: ${NEXT_PUBLIC_VIP_IPS:-}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    environment:
+      API_URL: http://backend:8888
+      NODE_ENV: production
+    ports:
+      - ${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000
+    tmpfs:
+      - /tmp
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:3000').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - application
+
+networks:
+  application:
+    ipam:
+      config:
+        - subnet: ${APPLICATION_SUBNET:-172.29.77.0/24}
+
+volumes:
+  backend-geoip:

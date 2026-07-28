@@ -1,9 +1,9 @@
 {
-  "openapi": "3.0.0",
+  "openapi": "3.0.3",
   "info": {
     "title": "Source Engine Server List API",
-    "description": "API for managing and querying Source Engine game servers",
-    "version": "1.0.0"
+    "description": "Counter-Strike: Source discovery, live snapshots, durable abuse enforcement, evidence, and recovery.",
+    "version": "2.0.0"
   },
   "servers": [
     {
@@ -14,12 +14,10 @@
   "paths": {
     "/servers": {
       "get": {
-        "summary": "Get list of online servers",
-        "description": "Returns a list of all currently online, non-blacklisted servers",
-        "operationId": "getServerList",
+        "summary": "List eligible online servers",
         "responses": {
           "200": {
-            "description": "Successful operation",
+            "description": "Fresh eligible server snapshots",
             "content": {
               "application/json": {
                 "schema": {
@@ -30,30 +28,24 @@
                 }
               }
             }
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
           }
         }
       }
     },
     "/server/{address}": {
       "get": {
-        "summary": "Get server players",
-        "description": "Returns a list of players on a specific server",
-        "operationId": "getServer",
+        "summary": "Get a fresh eligible player roster",
         "parameters": [
           {
-            "name": "address",
-            "in": "path",
-            "description": "Server address in format IP:PORT",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}:\\d{1,5}$"
-            }
+            "$ref": "#/components/parameters/ServerAddress"
           }
         ],
         "responses": {
           "200": {
-            "description": "Successful operation",
+            "description": "Fresh player roster",
             "content": {
               "application/json": {
                 "schema": {
@@ -66,84 +58,90 @@
             }
           },
           "400": {
-            "description": "Invalid address format",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "Invalid address"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/BadRequest"
           },
           "404": {
-            "description": "Server not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                      "example": "Server not found"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
           }
         }
       }
     },
     "/blacklist": {
       "get": {
-        "summary": "Get blacklist for Counter-Strike: Source",
-        "description": "Returns a blacklist file in Counter-Strike: Source format containing all blacklisted IPs and banned servers",
-        "operationId": "getBlacklist",
+        "summary": "Get the Counter-Strike: Source blacklist",
+        "description": "Whole-IP entries use port zero. Active per-server durable bans use their nonzero server port. Invalid legacy addresses are omitted.",
         "responses": {
           "200": {
-            "description": "Successful operation - returns blacklist in CS:S format",
+            "description": "Valve KeyValues blacklist",
             "content": {
               "text/plain": {
                 "schema": {
-                  "type": "string",
-                  "description": "Counter-Strike: Source blacklist format",
-                  "example": "\"serverblacklist\"\n{\n    \"server\"\n    {\n        \"name\"        \"192.168.1.1\"\n        \"date\"        \"1742307022\"\n        \"addr\"        \"192.168.1.1:0\"\n    }\n    \"server\"\n    {\n        \"name\"        \"192.168.1.2:27015\"\n        \"date\"        \"1742307022\"\n        \"addr\"        \"192.168.1.2:27015\"\n    }\n}"
+                  "type": "string"
                 }
               }
             }
           },
           "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/admin/add": {
+      "post": {
+        "summary": "Add or retain a server",
+        "description": "The same UUID and address replay the stored result, including the originally resolved country. Reusing the UUID for a different intent returns 409.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerAddressForm"
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MutationResult"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
           }
         }
       }
     },
     "/admin/blacklist": {
       "post": {
-        "summary": "Blacklist a server",
-        "description": "Blacklists a server with a specified reason",
-        "operationId": "blacklistServer",
+        "summary": "Immediately ban one server",
+        "description": "Creates durable manual authority. A same-key retry returns the stored result. Historical-only reasons are readable but cannot be written.",
         "security": [
           {
             "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
           }
         ],
         "requestBody": {
@@ -152,117 +150,137 @@
             "application/x-www-form-urlencoded": {
               "schema": {
                 "type": "object",
+                "required": [
+                  "address"
+                ],
                 "properties": {
                   "address": {
                     "type": "string",
-                    "description": "Server address in format IP:PORT",
-                    "example": "192.168.1.1:27015"
+                    "example": "54.37.245.51:27045"
                   },
                   "reason": {
-                    "type": "string",
-                    "description": "Reason for blacklisting",
-                    "example": "none",
-                    "enum": [
-                      "none",
-                      "differing_address",
-                      "illegal_player_count",
-                      "suspicious_players",
-                      "same_connection_time"
-                    ]
+                    "$ref": "#/components/schemas/WritableServerBanReason"
                   }
-                },
-                "required": [
-                  "address"
-                ]
+                }
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Server blacklisted successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "string",
-                      "example": "Server blacklisted successfully"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/MutationResult"
           },
           "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/BadRequest"
           },
           "403": {
-            "description": "IP is whitelisted and cannot be banned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "description": "The IP is whitelisted"
           },
           "404": {
-            "description": "Server not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/NotFound"
           },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
+          }
+        }
+      }
+    },
+    "/admin/unban": {
+      "post": {
+        "summary": "Recover one durable server ban",
+        "description": "Clears active strike state and compatibility state while preserving evidence and enforcement history. If the server row no longer exists, requires_repopulation is true.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerAddressForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RecoveryResult"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
+          }
+        }
+      }
+    },
+    "/admin/unblacklist": {
+      "post": {
+        "summary": "Recover one exact whole-IP blacklist",
+        "description": "Targets the blacklist row captured by the operation receipt. Linked enforcement contributors determine which tracker bans and states are cleared. Manual and legacy server bans remain active. Deleted server rows require a complete fetch or manual add to repopulate.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "address"
+                ],
+                "properties": {
+                  "address": {
+                    "type": "string",
+                    "format": "ipv4",
+                    "example": "54.37.245.51"
                   }
                 }
               }
             }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/RecoveryResult"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
           }
         }
       }
     },
     "/admin/banned": {
       "get": {
-        "summary": "Get banned servers",
-        "description": "Returns a list of all banned servers",
-        "operationId": "getBannedServers",
+        "summary": "List active durable server bans",
         "security": [
           {
             "basicAuth": []
@@ -270,7 +288,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Successful operation",
+            "description": "Manual, tracker-confirmed, and legacy bans",
             "content": {
               "application/json": {
                 "schema": {
@@ -283,118 +301,122 @@
             }
           },
           "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
     },
-    "/admin/add": {
-      "post": {
-        "summary": "Add a server",
-        "description": "Adds a new server to the system",
-        "operationId": "addServer",
+    "/admin/observations": {
+      "get": {
+        "summary": "List bounded abuse evidence",
+        "description": "Ordered by observed_at DESC, id DESC. Pass next_cursor unchanged to fetch the next page.",
         "security": [
           {
             "basicAuth": []
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "address": {
-                    "type": "string",
-                    "description": "Server address in format IP:PORT",
-                    "example": "192.168.1.1:27015"
-                  }
-                },
-                "required": [
-                  "address"
-                ]
-              }
+        "parameters": [
+          {
+            "name": "ip",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "ipv4"
+            }
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reason",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/DetectionReason"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
-        },
+        ],
         "responses": {
           "200": {
-            "description": "Server added successfully",
+            "description": "Observation page",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "string",
-                      "example": "Server added successfully"
-                    }
-                  }
+                  "$ref": "#/components/schemas/ObservationPage"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/BadRequest"
           },
           "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "summary": "Summarize legacy enforcement",
+        "description": "Groups legacy server bans and event-unlinked legacy blacklists by their persisted reason.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Legacy enforcement counts"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
           }
         }
       }
     },
     "/docs": {
       "get": {
-        "summary": "API Documentation",
-        "description": "Returns the OpenAPI documentation for the API",
-        "operationId": "getApiDocs",
+        "summary": "Get this OpenAPI document",
         "responses": {
           "200": {
-            "description": "Successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OpenAPI"
-                }
-              }
-            }
+            "description": "OpenAPI JSON"
           }
         }
       }
@@ -404,53 +426,117 @@
     "securitySchemes": {
       "basicAuth": {
         "type": "http",
-        "scheme": "basic",
-        "description": "Basic authentication with username and password'"
+        "scheme": "basic"
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "A canonical lowercase UUID retained for this user intent and reused for transport or unknown-outcome retries.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "ServerAddress": {
+        "name": "address",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "54.37.245.51:27045"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed address, filter, reason, limit, cursor, or idempotency key"
+      },
+      "Conflict": {
+        "description": "The idempotency key belongs to another intent, or current durable policy rejects the request"
+      },
+      "NotFound": {
+        "description": "The requested server or eligible roster does not exist"
+      },
+      "InternalError": {
+        "description": "Database or internal failure"
+      },
+      "MembershipUnavailable": {
+        "description": "Tracker membership is unavailable, or an indeterminate mutation returns its operation key, retry_same_key=true, and unknown_membership_converged or unknown_membership_degraded"
+      },
+      "MutationResult": {
+        "description": "Durable mutation result with attempt-local publication_status. A known commit remains successful when publication_status is committed_membership_degraded. A same-key retry returns the same operation identity and domain result."
+      },
+      "RecoveryResult": {
+        "description": "Durable recovery result with outcome, operation ID, replay status, event IDs, requires_repopulation, and attempt-local publication_status."
       }
     },
     "schemas": {
+      "ServerAddressForm": {
+        "type": "object",
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "54.37.245.51:27045"
+          }
+        }
+      },
+      "DetectionReason": {
+        "type": "string",
+        "enum": [
+          "illegal_player_count",
+          "non_css_application",
+          "player_count_mismatch",
+          "same_connection_time",
+          "duplicate_roster",
+          "steam_metadata_illegal_counts",
+          "steam_metadata_duplicate_signature"
+        ]
+      },
+      "WritableServerBanReason": {
+        "type": "string",
+        "default": "none",
+        "enum": [
+          "none",
+          "illegal_player_count",
+          "non_css_application",
+          "player_count_mismatch",
+          "same_connection_time",
+          "duplicate_roster"
+        ]
+      },
       "OnlineServer": {
         "type": "object",
         "properties": {
           "name": {
-            "type": "string",
-            "description": "Server name",
-            "example": "My CS:S Server"
+            "type": "string"
           },
           "map": {
-            "type": "string",
-            "description": "Current map",
-            "example": "de_dust2"
+            "type": "string"
           },
           "players": {
-            "type": "integer",
-            "description": "Number of real players (excluding bots)",
-            "example": 10
+            "type": "integer"
           },
           "max_players": {
-            "type": "integer",
-            "description": "Maximum number of players allowed",
-            "example": 32
+            "type": "integer"
           },
           "bots": {
-            "type": "integer",
-            "description": "Number of bots on the server",
-            "example": 2
+            "type": "integer"
           },
           "ip": {
             "type": "string",
-            "description": "Server IP address",
-            "example": "192.168.1.1"
+            "format": "ipv4"
           },
           "port": {
-            "type": "string",
-            "description": "Server port",
-            "example": "27015"
+            "type": "string"
           },
           "country": {
-            "type": "string",
-            "description": "Country code where the server is located",
-            "example": "US"
+            "type": "string"
           }
         }
       },
@@ -458,24 +544,16 @@
         "type": "object",
         "properties": {
           "id": {
-            "type": "integer",
-            "description": "Player's unique identifier",
-            "example": 1
+            "type": "integer"
           },
           "name": {
-            "type": "string",
-            "description": "Player's name",
-            "example": "Player1"
+            "type": "string"
           },
           "score": {
-            "type": "integer",
-            "description": "Player's score",
-            "example": 10
+            "type": "integer"
           },
           "connection_time": {
-            "type": "number",
-            "description": "Time in seconds the player has been connected",
-            "example": "300"
+            "type": "number"
           }
         }
       },
@@ -483,33 +561,85 @@
         "type": "object",
         "properties": {
           "address": {
-            "type": "string",
-            "description": "Server address in format IP:PORT",
-            "example": "192.168.1.1:27015"
+            "type": "string"
           },
           "banned_at": {
             "type": "string",
-            "format": "date-time",
-            "description": "Time when the server was banned",
-            "example": "2023-01-01T12:00:00Z"
+            "format": "date-time"
           },
           "abuse_reason": {
+            "type": "string"
+          },
+          "source": {
             "type": "string",
-            "description": "Reason for banning the server",
-            "example": "none",
             "enum": [
-              "none",
-              "differing_address",
-              "illegal_player_count",
-              "suspicious_players",
-              "same_connection_time"
+              "manual",
+              "tracker",
+              "legacy"
             ]
+          },
+          "strike_count": {
+            "type": "integer"
+          },
+          "last_detected_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "valid": {
+            "type": "boolean"
+          },
+          "validity_reason": {
+            "type": "string"
           }
         }
       },
-      "OpenAPI": {
+      "ObservationPage": {
         "type": "object",
-        "description": "OpenAPI documentation for the API"
+        "properties": {
+          "next_cursor": {
+            "type": "string"
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            }
+          }
+        }
+      },
+      "Observation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "cycle_id": {
+            "type": "integer"
+          },
+          "address": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/DetectionReason"
+          },
+          "source": {
+            "type": "string"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "detector_version": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
       }
     }
   }
