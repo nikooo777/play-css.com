@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef, useSyncExternalStore } from 'react';
 import { ServerModal } from './ServerModal';
 import { AdminPanel } from './AdminPanel';
+import { BlacklistModal } from './BlacklistModal';
 import { CountryPreference } from './CountryPreference';
 import { CountryFlag, CountryFlagDefs } from '@/components/CountryFlag';
 import {
@@ -31,6 +32,7 @@ const REFRESH_INTERVAL = 30000; // 30 seconds
 const fieldClass = 'w-full h-10 px-3 rounded-[3px] border border-edge-2 bg-field text-sm text-ink placeholder:text-mut/60 focus:border-ct focus:outline-none';
 const labelClass = 'block font-display text-[11px] font-semibold uppercase tracking-[0.15em] text-mut mb-1.5';
 const ghostButtonClass = 'inline-flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-wider text-mut hover:text-ink border border-edge hover:border-edge-2 bg-panel rounded-[3px] px-3 py-2 transition-colors';
+const blacklistButtonClass = 'inline-flex items-center gap-2 rounded-[3px] border border-tr/60 bg-tr/10 px-3 py-2 font-display text-xs font-semibold uppercase tracking-wider text-tr transition-colors hover:bg-tr hover:text-bg';
 const connectButtonClass = 'inline-flex items-center font-display text-[11px] font-semibold uppercase tracking-wider text-hud border border-hud/60 hover:bg-hud hover:text-bg rounded-[2px] px-3 py-1.5 transition-colors';
 
 function CapacityBar({ players, maxPlayers }: { players: number; maxPlayers: number }) {
@@ -90,9 +92,11 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     stripSpecialChars: true,
   });
   const [countryPreference, setCountryPreference] = useState('');
+  const [countryPreferenceEnabled, setCountryPreferenceEnabled] = useState(false);
   const [locationState, setLocationState] = useState<LocationRequestState>('idle');
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
+  const [showBlacklistModal, setShowBlacklistModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
@@ -132,31 +136,12 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     setShowAdminPanel(false);
   }, []);
 
-  const handleCloseServerModal = useCallback(() => {
-    setSelectedServer(null);
+  const handleCloseBlacklistModal = useCallback(() => {
+    setShowBlacklistModal(false);
   }, []);
 
-  // Handle blacklist download
-  const handleDownloadBlacklist = useCallback(async () => {
-    try {
-      const response = await fetch('/api/blacklist');
-      if (!response.ok) {
-        throw new Error('Failed to download blacklist');
-      }
-
-      // Create blob and download
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'server_blacklist.txt';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      console.error('Failed to download blacklist:', error);
-    }
+  const handleCloseServerModal = useCallback(() => {
+    setSelectedServer(null);
   }, []);
 
   // Fetch servers with background refresh support. Background refreshes are
@@ -258,6 +243,17 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     locationRequestId.current += 1;
     activateCountryPreference(countryCode);
   }, [activateCountryPreference]);
+
+  const handleCountryPreferenceToggle = useCallback((checked: boolean) => {
+    setCountryPreferenceEnabled(checked);
+
+    if (!checked) {
+      locationRequestId.current += 1;
+      setCountryPreference('');
+      setLocationState('idle');
+      setLocationError(null);
+    }
+  }, []);
 
   const handleUseLocation = useCallback(async () => {
     const requestId = locationRequestId.current + 1;
@@ -379,10 +375,25 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              onClick={handleDownloadBlacklist}
+            <a
+              href="https://github.com/nikooo777/play-css.com"
+              target="_blank"
+              rel="noreferrer"
               className={ghostButtonClass}
-              title="Download server_blacklist.txt for cstrike/cfg"
+              title="View source code on GitHub"
+              aria-label="View source code on GitHub"
+            >
+              <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.69c-2.78.61-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 7.7a9.6 9.6 0 0 1 2.5.34c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.86v2.76c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+              </svg>
+              <span className="hidden sm:inline">GitHub</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setShowBlacklistModal(true)}
+              className={blacklistButtonClass}
+              title="Blacklist installation instructions"
+              aria-label="Open blacklist installation instructions"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -496,16 +507,27 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
                   <span className="select-none text-sm text-ink-2">{label}</span>
                 </label>
               ))}
+              <label className="flex cursor-pointer items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  className="hud-check"
+                  checked={countryPreferenceEnabled}
+                  onChange={(event) => handleCountryPreferenceToggle(event.target.checked)}
+                />
+                <span className="select-none text-sm text-ink-2">Country preference</span>
+              </label>
             </div>
           </div>
-          <CountryPreference
-            countryCodes={countryCodes}
-            error={locationError}
-            state={locationState}
-            value={countryPreference}
-            onChange={handleCountryPreference}
-            onLocate={handleUseLocation}
-          />
+          {countryPreferenceEnabled && (
+            <CountryPreference
+              countryCodes={countryCodes}
+              error={locationError}
+              state={locationState}
+              value={countryPreference}
+              onChange={handleCountryPreference}
+              onLocate={handleUseLocation}
+            />
+          )}
         </section>
 
         {/* Server List */}
@@ -697,6 +719,11 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
           onClose={handleCloseServerModal}
         />
       )}
+
+      <BlacklistModal
+        isOpen={showBlacklistModal}
+        onClose={handleCloseBlacklistModal}
+      />
 
       {/* Admin Panel */}
       <AdminPanel
