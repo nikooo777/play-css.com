@@ -383,6 +383,14 @@ export function ServerBrowserClient({
   }, [refreshStatus]);
 
   useEffect(() => {
+    if (!error) {
+      return;
+    }
+    const retry = setTimeout(() => fetchServers(false), STATUS_REFRESH_INTERVAL);
+    return () => clearTimeout(retry);
+  }, [error, fetchServers]);
+
+  useEffect(() => {
     const source = backendStatus?.snapshot.source;
     const previousSource = snapshotSourceRef.current;
     const previousAvailable = snapshotAvailableRef.current;
@@ -565,13 +573,17 @@ export function ServerBrowserClient({
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="max-w-sm text-center">
-          <p className="font-mono text-sm text-tr">] connection failed</p>
-          <p className="mt-2 text-sm text-mut">{error}</p>
+          <p className="font-mono text-sm text-hud">
+            ] reconnecting to server list<span className="cursor-blink">_</span>
+          </p>
+          <p className="mt-2 text-sm text-mut">
+            The connection was interrupted. This page will retry automatically.
+          </p>
           <button
             onClick={handleRetry}
             className="mt-5 rounded-[2px] border border-hud/60 px-4 py-2 font-display text-xs font-semibold uppercase tracking-wider text-hud transition-colors hover:bg-hud hover:text-bg"
           >
-            Retry
+            Retry now
           </button>
         </div>
       </div>
