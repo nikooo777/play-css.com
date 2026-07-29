@@ -15,6 +15,32 @@ import {
 const originalFetch = globalThis.fetch;
 const originalVipIps = process.env.VIP_IPS;
 
+function statusRules(): BackendStatus['monitor']['rules'] {
+  const causes = {
+    confirmation: 0,
+    positive_player_count_mismatch: 0,
+    connection_cadence: 0,
+    new_endpoint: 0,
+    ttl_refresh: 0,
+  };
+  return {
+    probe_mode: 'enabled',
+    candidates_by_cause: { ...causes },
+    selected_by_cause: { ...causes },
+    network_attempts_started_by_cause: { ...causes },
+    deferred_by_cause: { ...causes },
+    attempted_count: 0,
+    successful_count: 0,
+    failed_count: 0,
+    count_conflation_match_count: 0,
+    explicit_producer_match_count: 0,
+    cadence_match_count: 0,
+    combined_match_count: 0,
+    observe_only_finding_count: 0,
+    enforce_eligible_finding_count: 0,
+  };
+}
+
 afterEach(() => {
   globalThis.fetch = originalFetch;
   if (originalVipIps === undefined) {
@@ -55,6 +81,7 @@ test('backend 503 renders the client with warm-up status', async () => {
       complete_coverage: false,
       last_successful_at: null,
       last_duration_ms: null,
+      rules: statusRules(),
     },
     fetch: {
       state: 'disabled',
@@ -157,6 +184,7 @@ test('503 followed by ready nonempty status refreshes the list immediately', asy
       complete_coverage: true,
       last_successful_at: '2026-07-29T12:00:02Z',
       last_duration_ms: 1_000,
+      rules: statusRules(),
     },
     fetch: {
       state: 'disabled',
@@ -285,6 +313,7 @@ test('live transition refreshes a persisted browser list', () => {
       complete_coverage: true,
       last_successful_at: '2026-07-29T12:01:00Z',
       last_duration_ms: 58_000,
+      rules: statusRules(),
     },
     fetch: {
       state: 'disabled',
@@ -328,6 +357,7 @@ test('authoritative empty snapshot does not require a list refresh', () => {
       complete_coverage: true,
       last_successful_at: '2026-07-29T12:01:00Z',
       last_duration_ms: 58_000,
+      rules: statusRules(),
     },
     fetch: {
       state: 'disabled',
@@ -371,6 +401,7 @@ test('usable snapshot reports monitor failures', () => {
       complete_coverage: false,
       last_successful_at: null,
       last_duration_ms: 29_000,
+      rules: statusRules(),
     },
     fetch: {
       state: 'disabled',

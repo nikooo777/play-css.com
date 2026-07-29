@@ -7,6 +7,32 @@ import {
   type StatusPollingVisibility,
 } from './backendStatus';
 
+function validRules(): BackendStatus['monitor']['rules'] {
+  const causes = {
+    confirmation: 1,
+    positive_player_count_mismatch: 2,
+    connection_cadence: 3,
+    new_endpoint: 4,
+    ttl_refresh: 5,
+  };
+  return {
+    probe_mode: 'enabled',
+    candidates_by_cause: { ...causes },
+    selected_by_cause: { ...causes },
+    network_attempts_started_by_cause: { ...causes },
+    deferred_by_cause: { ...causes },
+    attempted_count: 14,
+    successful_count: 12,
+    failed_count: 2,
+    count_conflation_match_count: 3,
+    explicit_producer_match_count: 2,
+    cadence_match_count: 1,
+    combined_match_count: 1,
+    observe_only_finding_count: 2,
+    enforce_eligible_finding_count: 1,
+  };
+}
+
 function validStatus(): BackendStatus {
   return {
     state: 'warming',
@@ -38,6 +64,7 @@ function validStatus(): BackendStatus {
       complete_coverage: false,
       last_successful_at: null,
       last_duration_ms: null,
+      rules: validRules(),
     },
     fetch: {
       state: 'disabled',
@@ -74,11 +101,22 @@ test('backend status validator rejects malformed nested state', () => {
     ...validStatus(),
     error_code: 'database_connection_failed',
   };
+  const missingRulesCount = {
+    ...validStatus(),
+    monitor: {
+      ...validStatus().monitor,
+      rules: {
+        ...validRules(),
+        successful_count: undefined,
+      },
+    },
+  };
 
   expect(isBackendStatus(nullMembership)).toBe(false);
   expect(isBackendStatus(invalidMonitorState)).toBe(false);
   expect(isBackendStatus(missingCount)).toBe(false);
   expect(isBackendStatus(invalidErrorCode)).toBe(false);
+  expect(isBackendStatus(missingRulesCount)).toBe(false);
 });
 
 test('status polling pauses while the tab is hidden', () => {

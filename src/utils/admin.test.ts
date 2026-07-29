@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DETECTION_REASONS,
   WRITABLE_BAN_REASONS,
   asMutationData,
   formatAdminLabel,
@@ -14,10 +15,14 @@ describe('admin API helpers', () => {
       'none',
       'illegal_player_count',
       'non_css_application',
+      'explicit_fake_client_producer',
       'player_count_mismatch',
+      'synthetic_connection_cadence',
       'same_connection_time',
       'duplicate_roster',
     ]);
+    expect(DETECTION_REASONS).toContain('explicit_fake_client_producer');
+    expect(DETECTION_REASONS).toContain('synthetic_connection_cadence');
   });
 
   test('preserves structured mutation data', () => {

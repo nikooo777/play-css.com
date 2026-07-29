@@ -593,7 +593,9 @@
         "enum": [
           "illegal_player_count",
           "non_css_application",
+          "explicit_fake_client_producer",
           "player_count_mismatch",
+          "synthetic_connection_cadence",
           "same_connection_time",
           "duplicate_roster",
           "steam_metadata_illegal_counts",
@@ -607,7 +609,9 @@
           "none",
           "illegal_player_count",
           "non_css_application",
+          "explicit_fake_client_producer",
           "player_count_mismatch",
+          "synthetic_connection_cadence",
           "same_connection_time",
           "duplicate_roster"
         ]
@@ -781,7 +785,47 @@
             "candidate_count": 0,
             "complete_coverage": false,
             "last_successful_at": null,
-            "last_duration_ms": null
+            "last_duration_ms": null,
+            "rules": {
+              "probe_mode": "enabled",
+              "candidates_by_cause": {
+                "confirmation": 0,
+                "positive_player_count_mismatch": 0,
+                "connection_cadence": 0,
+                "new_endpoint": 0,
+                "ttl_refresh": 0
+              },
+              "selected_by_cause": {
+                "confirmation": 0,
+                "positive_player_count_mismatch": 0,
+                "connection_cadence": 0,
+                "new_endpoint": 0,
+                "ttl_refresh": 0
+              },
+              "network_attempts_started_by_cause": {
+                "confirmation": 0,
+                "positive_player_count_mismatch": 0,
+                "connection_cadence": 0,
+                "new_endpoint": 0,
+                "ttl_refresh": 0
+              },
+              "deferred_by_cause": {
+                "confirmation": 0,
+                "positive_player_count_mismatch": 0,
+                "connection_cadence": 0,
+                "new_endpoint": 0,
+                "ttl_refresh": 0
+              },
+              "attempted_count": 0,
+              "successful_count": 0,
+              "failed_count": 0,
+              "count_conflation_match_count": 0,
+              "explicit_producer_match_count": 0,
+              "cadence_match_count": 0,
+              "combined_match_count": 0,
+              "observe_only_finding_count": 0,
+              "enforce_eligible_finding_count": 0
+            }
           },
           "fetch": {
             "state": "not_started",
@@ -870,7 +914,8 @@
           "candidate_count",
           "complete_coverage",
           "last_successful_at",
-          "last_duration_ms"
+          "last_duration_ms",
+          "rules"
         ],
         "properties": {
           "state": {
@@ -926,6 +971,119 @@
             "type": "integer",
             "minimum": 0,
             "nullable": true
+          },
+          "rules": {
+            "$ref": "#/components/schemas/StatusMonitorRules"
+          }
+        }
+      },
+      "StatusRulesCauseCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "confirmation",
+          "positive_player_count_mismatch",
+          "connection_cadence",
+          "new_endpoint",
+          "ttl_refresh"
+        ],
+        "properties": {
+          "confirmation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "positive_player_count_mismatch": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "connection_cadence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "new_endpoint": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ttl_refresh": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "StatusMonitorRules": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "probe_mode",
+          "candidates_by_cause",
+          "selected_by_cause",
+          "network_attempts_started_by_cause",
+          "deferred_by_cause",
+          "attempted_count",
+          "successful_count",
+          "failed_count",
+          "count_conflation_match_count",
+          "explicit_producer_match_count",
+          "cadence_match_count",
+          "combined_match_count",
+          "observe_only_finding_count",
+          "enforce_eligible_finding_count"
+        ],
+        "properties": {
+          "probe_mode": {
+            "type": "string",
+            "enum": [
+              "enabled",
+              "disabled"
+            ]
+          },
+          "candidates_by_cause": {
+            "$ref": "#/components/schemas/StatusRulesCauseCounts"
+          },
+          "selected_by_cause": {
+            "$ref": "#/components/schemas/StatusRulesCauseCounts"
+          },
+          "network_attempts_started_by_cause": {
+            "$ref": "#/components/schemas/StatusRulesCauseCounts"
+          },
+          "deferred_by_cause": {
+            "$ref": "#/components/schemas/StatusRulesCauseCounts"
+          },
+          "attempted_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "successful_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "count_conflation_match_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "explicit_producer_match_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cadence_match_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "combined_match_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observe_only_finding_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enforce_eligible_finding_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -1045,7 +1203,7 @@
             "$ref": "#/components/schemas/DetectionReason"
           },
           "source": {
-            "type": "string"
+            "$ref": "#/components/schemas/DetectionSource"
           },
           "observed_at": {
             "type": "string",
@@ -1059,6 +1217,16 @@
             "additionalProperties": true
           }
         }
+      },
+      "DetectionSource": {
+        "type": "string",
+        "enum": [
+          "a2s_info",
+          "a2s_players",
+          "a2s_rules",
+          "roster_comparison",
+          "steam_metadata"
+        ]
       }
     }
   }

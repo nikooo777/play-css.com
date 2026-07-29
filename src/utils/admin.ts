@@ -2,7 +2,9 @@ export const WRITABLE_BAN_REASONS = [
   'none',
   'illegal_player_count',
   'non_css_application',
+  'explicit_fake_client_producer',
   'player_count_mismatch',
+  'synthetic_connection_cadence',
   'same_connection_time',
   'duplicate_roster',
 ] as const;
@@ -10,7 +12,9 @@ export const WRITABLE_BAN_REASONS = [
 export const DETECTION_REASONS = [
   'illegal_player_count',
   'non_css_application',
+  'explicit_fake_client_producer',
   'player_count_mismatch',
+  'synthetic_connection_cadence',
   'same_connection_time',
   'duplicate_roster',
   'steam_metadata_illegal_counts',

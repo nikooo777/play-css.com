@@ -2,6 +2,7 @@ export type BackendState = 'starting' | 'warming' | 'ready' | 'degraded';
 export type SnapshotSource = 'none' | 'persisted' | 'live';
 export type MonitorState = 'idle' | 'queued' | 'running' | 'succeeded' | 'inconclusive' | 'failed';
 export type FetchState = 'not_started' | 'disabled' | 'running' | 'succeeded' | 'failed';
+export type RulesProbeMode = 'enabled' | 'disabled';
 export type BackendErrorCode =
   | 'membership_degraded'
   | 'snapshot_unavailable'
@@ -40,12 +41,36 @@ export interface BackendStatus {
     complete_coverage: boolean;
     last_successful_at: string | null;
     last_duration_ms: number | null;
+    rules: {
+      probe_mode: RulesProbeMode;
+      candidates_by_cause: StatusRulesCauseCounts;
+      selected_by_cause: StatusRulesCauseCounts;
+      network_attempts_started_by_cause: StatusRulesCauseCounts;
+      deferred_by_cause: StatusRulesCauseCounts;
+      attempted_count: number;
+      successful_count: number;
+      failed_count: number;
+      count_conflation_match_count: number;
+      explicit_producer_match_count: number;
+      cadence_match_count: number;
+      combined_match_count: number;
+      observe_only_finding_count: number;
+      enforce_eligible_finding_count: number;
+    };
   };
   fetch: {
     state: FetchState;
     started_at: string | null;
     completed_at: string | null;
   };
+}
+
+export interface StatusRulesCauseCounts {
+  confirmation: number;
+  positive_player_count_mismatch: number;
+  connection_cadence: number;
+  new_endpoint: number;
+  ttl_refresh: number;
 }
 
 const backendStates: BackendState[] = ['starting', 'warming', 'ready', 'degraded'];
@@ -97,6 +122,19 @@ function isNullableNonNegativeInteger(value: unknown): value is number | null {
   return value === null || isNonNegativeInteger(value);
 }
 
+function isRulesCauseCounts(value: unknown): value is StatusRulesCauseCounts {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    isNonNegativeInteger(value.confirmation) &&
+    isNonNegativeInteger(value.positive_player_count_mismatch) &&
+    isNonNegativeInteger(value.connection_cadence) &&
+    isNonNegativeInteger(value.new_endpoint) &&
+    isNonNegativeInteger(value.ttl_refresh)
+  );
+}
+
 export function isBackendStatus(value: unknown): value is BackendStatus {
   if (!isRecord(value)) {
     return false;
@@ -104,11 +142,13 @@ export function isBackendStatus(value: unknown): value is BackendStatus {
   const membership = value.membership;
   const snapshot = value.snapshot;
   const monitor = value.monitor;
+  const rules = isRecord(monitor) ? monitor.rules : null;
   const fetch = value.fetch;
   if (
     !isRecord(membership) ||
     !isRecord(snapshot) ||
     !isRecord(monitor) ||
+    !isRecord(rules) ||
     !isRecord(fetch)
   ) {
     return false;
@@ -138,6 +178,20 @@ export function isBackendStatus(value: unknown): value is BackendStatus {
     typeof monitor.complete_coverage === 'boolean' &&
     isNullableString(monitor.last_successful_at) &&
     isNullableNonNegativeInteger(monitor.last_duration_ms) &&
+    (rules.probe_mode === 'enabled' || rules.probe_mode === 'disabled') &&
+    isRulesCauseCounts(rules.candidates_by_cause) &&
+    isRulesCauseCounts(rules.selected_by_cause) &&
+    isRulesCauseCounts(rules.network_attempts_started_by_cause) &&
+    isRulesCauseCounts(rules.deferred_by_cause) &&
+    isNonNegativeInteger(rules.attempted_count) &&
+    isNonNegativeInteger(rules.successful_count) &&
+    isNonNegativeInteger(rules.failed_count) &&
+    isNonNegativeInteger(rules.count_conflation_match_count) &&
+    isNonNegativeInteger(rules.explicit_producer_match_count) &&
+    isNonNegativeInteger(rules.cadence_match_count) &&
+    isNonNegativeInteger(rules.combined_match_count) &&
+    isNonNegativeInteger(rules.observe_only_finding_count) &&
+    isNonNegativeInteger(rules.enforce_eligible_finding_count) &&
     fetchStates.includes(fetch.state as FetchState) &&
     isNullableString(fetch.started_at) &&
     isNullableString(fetch.completed_at)
