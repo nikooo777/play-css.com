@@ -24,15 +24,18 @@ import {
 import { clearLegacyAdminCookie } from '@/utils/auth';
 import {
   isBackendStatus,
-  startBackendStatusPolling,
+  startVisibilityAwareBackendStatusPolling,
   type BackendStatus,
   type StatusPollingScheduler,
 } from '@/utils/backendStatus';
+import {
+  clearAutomaticRetries,
+  ERROR_RECOVERY_RESET_DELAY,
+} from '@/utils/errorRecovery';
 
 type ToggleFilter = 'noBots' | 'hideRussian' | 'stripSpecialChars';
 
 // Constants
-const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',').map(ip => ip.trim()).filter(Boolean) ?? [];
 const REFRESH_INTERVAL = 30_000;
 const STATUS_REFRESH_INTERVAL = 5_000;
 
@@ -158,10 +161,12 @@ export function ServerBrowserClient({
   initialServers,
   initialStatus,
   initialServerListAvailable,
+  vipIps,
 }: {
   initialServers: Server[];
   initialStatus: BackendStatus | null;
   initialServerListAvailable: boolean;
+  vipIps: string[];
 }) {
   // State
   const [servers, setServers] = useState<Server[]>(initialServers);
@@ -208,6 +213,14 @@ export function ServerBrowserClient({
   // One-time cleanup of the pre-sessionStorage credential cookie
   useEffect(() => {
     clearLegacyAdminCookie();
+  }, []);
+
+  useEffect(() => {
+    const reset = setTimeout(
+      () => clearAutomaticRetries(window.sessionStorage),
+      ERROR_RECOVERY_RESET_DELAY
+    );
+    return () => clearTimeout(reset);
   }, []);
 
   useEffect(() => {
@@ -373,12 +386,13 @@ export function ServerBrowserClient({
   }, [fetchServers]);
 
   useEffect(() => {
-    return startBackendStatusPolling(
+    return startVisibilityAwareBackendStatusPolling(
       () => {
         void refreshStatus();
       },
       STATUS_REFRESH_INTERVAL,
-      browserStatusPollingScheduler
+      browserStatusPollingScheduler,
+      document
     );
   }, [refreshStatus]);
 
@@ -386,8 +400,31 @@ export function ServerBrowserClient({
     if (!error) {
       return;
     }
-    const retry = setTimeout(() => fetchServers(false), STATUS_REFRESH_INTERVAL);
-    return () => clearTimeout(retry);
+
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const cancelRetry = () => {
+      if (retry !== null) {
+        clearTimeout(retry);
+        retry = null;
+      }
+    };
+    const scheduleRetry = () => {
+      cancelRetry();
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      retry = setTimeout(
+        () => fetchServers(false),
+        STATUS_REFRESH_INTERVAL
+      );
+    };
+
+    document.addEventListener('visibilitychange', scheduleRetry);
+    scheduleRetry();
+    return () => {
+      document.removeEventListener('visibilitychange', scheduleRetry);
+      cancelRetry();
+    };
   }, [error, fetchServers]);
 
   useEffect(() => {
@@ -826,7 +863,7 @@ export function ServerBrowserClient({
                         <tr
                           key={`${server.ip}:${server.port}`}
                           className={`cursor-pointer border-b border-edge/60 transition-colors hover:bg-panel-2 ${
-                            VIP_IPS.includes(server.ip) ? 'border-l-2 border-l-hud bg-hud/[0.04]' : ''
+                            vipIps.includes(server.ip) ? 'border-l-2 border-l-hud bg-hud/[0.04]' : ''
                           }`}
                           onClick={() => setSelectedServer(server)}
                         >
@@ -843,7 +880,7 @@ export function ServerBrowserClient({
                               >
                                 {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
                               </button>
-                              {VIP_IPS.includes(server.ip) && <VipTag />}
+                              {vipIps.includes(server.ip) && <VipTag />}
                             </div>
                           </td>
                           <td className="px-4 py-2.5">
@@ -895,7 +932,7 @@ export function ServerBrowserClient({
                       <div
                         key={`${server.ip}:${server.port}`}
                         className={`cursor-pointer border-b border-edge/60 p-4 transition-colors active:bg-panel-2 ${
-                          VIP_IPS.includes(server.ip) ? 'border-l-2 border-l-hud bg-hud/[0.04]' : ''
+                          vipIps.includes(server.ip) ? 'border-l-2 border-l-hud bg-hud/[0.04]' : ''
                         }`}
                         onClick={() => setSelectedServer(server)}
                       >
@@ -913,7 +950,7 @@ export function ServerBrowserClient({
                               >
                                 {filters.stripSpecialChars ? stripSpecialChars(server.name) : server.name}
                               </button>
-                              {VIP_IPS.includes(server.ip) && <VipTag />}
+                              {vipIps.includes(server.ip) && <VipTag />}
                             </h3>
                             <div className="flex items-center gap-4 text-sm">
                               <span className="font-mono text-[13px] text-ink-2">

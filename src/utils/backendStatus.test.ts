@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import { isBackendStatus, type BackendStatus } from './backendStatus';
+import {
+  isBackendStatus,
+  startVisibilityAwareBackendStatusPolling,
+  type BackendStatus,
+  type StatusPollingScheduler,
+  type StatusPollingVisibility,
+} from './backendStatus';
 
 function validStatus(): BackendStatus {
   return {
@@ -73,4 +79,62 @@ test('backend status validator rejects malformed nested state', () => {
   expect(isBackendStatus(invalidMonitorState)).toBe(false);
   expect(isBackendStatus(missingCount)).toBe(false);
   expect(isBackendStatus(invalidErrorCode)).toBe(false);
+});
+
+test('status polling pauses while the tab is hidden', () => {
+  let visibilityState: DocumentVisibilityState = 'visible';
+  let visibilityListener = () => {};
+  const visibility: StatusPollingVisibility = {
+    get visibilityState() {
+      return visibilityState;
+    },
+    addEventListener(_type, listener) {
+      visibilityListener = listener;
+    },
+    removeEventListener(_type, listener) {
+      if (visibilityListener === listener) {
+        visibilityListener = () => {};
+      }
+    },
+  };
+  const started: string[] = [];
+  const cleared: string[] = [];
+  const scheduler: StatusPollingScheduler<string, string> = {
+    setTimeout() {
+      const handle = `timeout-${started.length}`;
+      started.push(handle);
+      return handle;
+    },
+    clearTimeout(handle) {
+      cleared.push(handle);
+    },
+    setInterval() {
+      const handle = `interval-${started.length}`;
+      started.push(handle);
+      return handle;
+    },
+    clearInterval(handle) {
+      cleared.push(handle);
+    },
+  };
+
+  const stop = startVisibilityAwareBackendStatusPolling(
+    () => {},
+    5_000,
+    scheduler,
+    visibility
+  );
+  visibilityState = 'hidden';
+  visibilityListener();
+  visibilityState = 'visible';
+  visibilityListener();
+  stop();
+
+  expect(started).toEqual([
+    'timeout-0',
+    'interval-1',
+    'timeout-2',
+    'interval-3',
+  ]);
+  expect(cleared).toEqual(started);
 });

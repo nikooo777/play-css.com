@@ -1,17 +1,52 @@
 'use client';
 
-import { useCallback, useEffect } from 'react';
-
-const AUTOMATIC_RETRY_DELAY = 5_000;
+import { useCallback, useEffect, useState } from 'react';
+import {
+  automaticRetryDelay,
+  recordAutomaticRetry,
+} from '@/utils/errorRecovery';
 
 export default function ErrorPage() {
+  const [automaticRetryExhausted, setAutomaticRetryExhausted] = useState(false);
+
   const handleRetry = useCallback(() => {
     window.location.reload();
   }, []);
 
   useEffect(() => {
-    const retry = setTimeout(handleRetry, AUTOMATIC_RETRY_DELAY);
-    return () => clearTimeout(retry);
+    const delay = automaticRetryDelay(window.sessionStorage);
+    if (delay === null) {
+      const exhausted = setTimeout(
+        () => setAutomaticRetryExhausted(true),
+        0
+      );
+      return () => clearTimeout(exhausted);
+    }
+
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const cancelRetry = () => {
+      if (retry !== null) {
+        clearTimeout(retry);
+        retry = null;
+      }
+    };
+    const scheduleRetry = () => {
+      cancelRetry();
+      if (document.visibilityState !== 'visible') {
+        return;
+      }
+      retry = setTimeout(() => {
+        recordAutomaticRetry(window.sessionStorage);
+        handleRetry();
+      }, delay);
+    };
+
+    document.addEventListener('visibilitychange', scheduleRetry);
+    scheduleRetry();
+    return () => {
+      document.removeEventListener('visibilitychange', scheduleRetry);
+      cancelRetry();
+    };
   }, [handleRetry]);
 
   return (
@@ -21,7 +56,9 @@ export default function ErrorPage() {
           ] reconnecting to server list<span className="cursor-blink">_</span>
         </p>
         <p className="mt-2 text-sm text-mut">
-          The backend may be restarting. This page will retry automatically.
+          {automaticRetryExhausted
+            ? 'Automatic retries stopped. Retry when you are ready.'
+            : 'The backend may be restarting. This page will retry while this tab is visible.'}
         </p>
         <button
           onClick={handleRetry}

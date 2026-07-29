@@ -50,14 +50,13 @@ services:
     image: ${FRONTEND_IMAGE:-play-css/frontend:local}
     build:
       context: .
-      args:
-        NEXT_PUBLIC_VIP_IPS: ${NEXT_PUBLIC_VIP_IPS:-}
     restart: unless-stopped
     init: true
     read_only: true
     environment:
       API_URL: http://backend:8888
       NODE_ENV: production
+      VIP_IPS: ${VIP_IPS:-}
     ports:
       - ${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:3000
     tmpfs:
@@ -70,7 +69,7 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:3000').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
+        - fetch('http://127.0.0.1:3000/api/health').then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))
       interval: 10s
       timeout: 5s
       retries: 12

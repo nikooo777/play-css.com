@@ -151,6 +151,18 @@ export interface StatusPollingScheduler<TTimeout, TInterval> {
   clearInterval: (handle: TInterval) => void;
 }
 
+export interface StatusPollingVisibility {
+  readonly visibilityState: DocumentVisibilityState;
+  addEventListener: (
+    type: 'visibilitychange',
+    listener: () => void
+  ) => void;
+  removeEventListener: (
+    type: 'visibilitychange',
+    listener: () => void
+  ) => void;
+}
+
 export function startBackendStatusPolling<TTimeout, TInterval>(
   refreshStatus: () => void,
   intervalMS: number,
@@ -161,5 +173,35 @@ export function startBackendStatusPolling<TTimeout, TInterval>(
   return () => {
     scheduler.clearTimeout(initial);
     scheduler.clearInterval(interval);
+  };
+}
+
+export function startVisibilityAwareBackendStatusPolling<TTimeout, TInterval>(
+  refreshStatus: () => void,
+  intervalMS: number,
+  scheduler: StatusPollingScheduler<TTimeout, TInterval>,
+  visibility: StatusPollingVisibility
+): () => void {
+  let stopPolling: (() => void) | null = null;
+
+  const synchronizePolling = () => {
+    if (visibility.visibilityState === 'visible') {
+      stopPolling ??= startBackendStatusPolling(
+        refreshStatus,
+        intervalMS,
+        scheduler
+      );
+      return;
+    }
+    stopPolling?.();
+    stopPolling = null;
+  };
+
+  visibility.addEventListener('visibilitychange', synchronizePolling);
+  synchronizePolling();
+
+  return () => {
+    visibility.removeEventListener('visibilitychange', synchronizePolling);
+    stopPolling?.();
   };
 }

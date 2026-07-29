@@ -13,9 +13,15 @@ import {
 } from './servers/client';
 
 const originalFetch = globalThis.fetch;
+const originalVipIps = process.env.VIP_IPS;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  if (originalVipIps === undefined) {
+    delete process.env.VIP_IPS;
+  } else {
+    process.env.VIP_IPS = originalVipIps;
+  }
 });
 
 test('backend 503 renders the client with warm-up status', async () => {
@@ -210,6 +216,42 @@ test('authoritative empty response renders when status is unavailable', async ()
   expect(page.props.initialServerListAvailable).toBe(true);
   expect(markup).toContain('Servers online');
   expect(markup).not.toContain('warming up server list');
+});
+
+test('VIP addresses are normalized from runtime configuration', async () => {
+  process.env.VIP_IPS = ' 54.37.245.51,1.1.1.1,54.37.245.51 ';
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    if (input.toString().endsWith('/servers')) {
+      return Response.json([]);
+    }
+    return Response.json(
+      { error: 'Backend status unavailable' },
+      { status: 502 }
+    );
+  }) as unknown as typeof fetch;
+
+  const page = await Home();
+
+  expect(page.props.vipIps).toEqual(['54.37.245.51', '1.1.1.1']);
+});
+
+test('server response parsing errors reach the error boundary', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    if (!input.toString().endsWith('/servers')) {
+      return Response.json(
+        { error: 'Backend status unavailable' },
+        { status: 502 }
+      );
+    }
+    return {
+      ok: true,
+      json() {
+        throw new TypeError('parser bug');
+      },
+    } as Response;
+  }) as unknown as typeof fetch;
+
+  expect(Home()).rejects.toThrow('parser bug');
 });
 
 test('live transition refreshes a persisted browser list', () => {

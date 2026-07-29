@@ -58,7 +58,7 @@ Create `.env.local` in the project root:
 
 ```env
 API_URL=http://localhost:8888
-NEXT_PUBLIC_VIP_IPS=
+VIP_IPS=
 ```
 
 Start the separate backend, then run the web application:
@@ -74,9 +74,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | Variable | Required | Description |
 | --- | --- | --- |
 | `API_URL` | Yes | Server-side base URL of the separate Source server API, for example `http://localhost:8888`. |
-| `NEXT_PUBLIC_VIP_IPS` | No | Comma-separated server IP addresses to highlight as VIP. Use bare IPs without ports. |
-
-`NEXT_PUBLIC_VIP_IPS` is included in the browser bundle. Rebuild the application after changing it in a production deployment.
+| `VIP_IPS` | No | Comma-separated server IP addresses to highlight as VIP. Use bare IPs without ports. Read at runtime by the frontend server. |
 
 ## Scripts
 

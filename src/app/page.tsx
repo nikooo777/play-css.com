@@ -22,6 +22,16 @@ function isStartupNetworkError(error: unknown): boolean {
     (error.name === 'AbortError' || error.name === 'TimeoutError');
 }
 
+function configuredVipIps(): string[] {
+  const configured = process.env.VIP_IPS ?? process.env.NEXT_PUBLIC_VIP_IPS ?? '';
+  return [...new Set(
+    configured
+      .split(',')
+      .map((ip) => ip.trim())
+      .filter(Boolean)
+  )];
+}
+
 async function getBackendStatus(): Promise<BackendStatus | null> {
   try {
     const response = await fetch(`${process.env.API_URL}/status`, {
@@ -40,41 +50,40 @@ async function getBackendStatus(): Promise<BackendStatus | null> {
 
 async function getInitialServerResult(): Promise<InitialServerResult> {
   const statusPromise = getBackendStatus();
+  let response: Response;
 
   try {
-    const response = await fetch(`${process.env.API_URL}/servers`, {
+    response = await fetch(`${process.env.API_URL}/servers`, {
       cache: 'no-store',
       signal: AbortSignal.timeout(INITIAL_SERVER_TIMEOUT),
     });
-    if (response.ok) {
-      const servers: unknown = await response.json();
-      if (!isServerList(servers)) {
-        throw new UnexpectedServerResponseError('Invalid server response');
-      }
-      return {
-        servers,
-        status: await statusPromise,
-        listAvailable: true,
-      };
-    }
-    if (response.status !== 503) {
-      throw new UnexpectedServerResponseError('Failed to fetch servers');
-    }
-    return {
-      servers: [],
-      status: await statusPromise,
-      listAvailable: false,
-    };
   } catch (error) {
-    if (
-      error instanceof UnexpectedServerResponseError ||
-      !isStartupNetworkError(error)
-    ) {
+    if (!isStartupNetworkError(error)) {
       throw error;
     }
     const status = await statusPromise;
     return { servers: [], status, listAvailable: false };
   }
+
+  if (response.ok) {
+    const servers: unknown = await response.json();
+    if (!isServerList(servers)) {
+      throw new UnexpectedServerResponseError('Invalid server response');
+    }
+    return {
+      servers,
+      status: await statusPromise,
+      listAvailable: true,
+    };
+  }
+  if (response.status !== 503) {
+    throw new UnexpectedServerResponseError('Failed to fetch servers');
+  }
+  return {
+    servers: [],
+    status: await statusPromise,
+    listAvailable: false,
+  };
 }
 
 export default async function Home() {
@@ -84,6 +93,7 @@ export default async function Home() {
       initialServers={initial.servers}
       initialStatus={initial.status}
       initialServerListAvailable={initial.listAvailable}
+      vipIps={configuredVipIps()}
     />
   );
 }

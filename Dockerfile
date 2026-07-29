@@ -14,9 +14,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 
-ARG NEXT_PUBLIC_VIP_IPS
-ENV NEXT_PUBLIC_VIP_IPS=${NEXT_PUBLIC_VIP_IPS}
-
 RUN ./node_modules/.bin/next build
 
 FROM node:22-alpine AS runtime
