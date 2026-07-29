@@ -62,10 +62,10 @@ const browserStatusPollingScheduler: StatusPollingScheduler<
   ReturnType<typeof setTimeout>,
   ReturnType<typeof setInterval>
 > = {
-  setTimeout,
-  clearTimeout,
-  setInterval,
-  clearInterval,
+  setTimeout: (callback, delay) => setTimeout(callback, delay),
+  clearTimeout: (handle) => clearTimeout(handle),
+  setInterval: (callback, delay) => setInterval(callback, delay),
+  clearInterval: (handle) => clearInterval(handle),
 };
 
 export function serverListStatusText(
