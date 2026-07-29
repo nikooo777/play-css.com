@@ -1,20 +1,13 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useTransition } from 'react';
+import { useCallback, useEffect } from 'react';
 
 const AUTOMATIC_RETRY_DELAY = 5_000;
 
-export default function ErrorPage({ reset }: { reset: () => void }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-
+export default function ErrorPage() {
   const handleRetry = useCallback(() => {
-    startTransition(() => {
-      router.refresh();
-      reset();
-    });
-  }, [reset, router]);
+    window.location.reload();
+  }, []);
 
   useEffect(() => {
     const retry = setTimeout(handleRetry, AUTOMATIC_RETRY_DELAY);
@@ -32,10 +25,9 @@ export default function ErrorPage({ reset }: { reset: () => void }) {
         </p>
         <button
           onClick={handleRetry}
-          disabled={isPending}
           className="mt-5 rounded-[2px] border border-hud/60 px-4 py-2 font-display text-xs font-semibold uppercase tracking-wider text-hud transition-colors hover:bg-hud hover:text-bg disabled:cursor-wait disabled:opacity-50"
         >
-          {isPending ? 'Retrying…' : 'Retry now'}
+          Retry now
         </button>
       </div>
     </div>
