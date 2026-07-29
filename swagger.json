@@ -18,6 +18,29 @@
         "responses": {
           "200": {
             "description": "Fresh eligible server snapshots",
+            "headers": {
+              "X-Play-CSS-Snapshot-Source": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "persisted",
+                    "live"
+                  ]
+                }
+              },
+              "X-Play-CSS-Snapshot-Age-Seconds": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "example": "no-store"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -30,7 +53,7 @@
             }
           },
           "503": {
-            "$ref": "#/components/responses/MembershipUnavailable"
+            "$ref": "#/components/responses/SnapshotUnavailable"
           }
         }
       }
@@ -411,6 +434,67 @@
         }
       }
     },
+    "/health/live": {
+      "get": {
+        "summary": "Check process liveness",
+        "responses": {
+          "200": {
+            "description": "The HTTP process is live",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Liveness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "summary": "Check public server-list readiness",
+        "responses": {
+          "200": {
+            "description": "Authoritative membership and a usable snapshot are available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Startup, membership, or snapshot state is not ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "summary": "Get startup and refresh status",
+        "responses": {
+          "200": {
+            "description": "Bounded public operational status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/docs": {
       "get": {
         "summary": "Get this OpenAPI document",
@@ -465,6 +549,24 @@
       },
       "MembershipUnavailable": {
         "description": "Tracker membership is unavailable, or an indeterminate mutation returns its operation key, retry_same_key=true, and unknown_membership_converged or unknown_membership_degraded"
+      },
+      "SnapshotUnavailable": {
+        "description": "Membership is degraded or no usable public snapshot exists",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "example": "no-store"
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SnapshotUnavailable"
+            }
+          }
+        }
       },
       "MutationResult": {
         "description": "Durable mutation result with attempt-local publication_status. A known commit remains successful when publication_status is committed_membership_degraded. A same-key retry returns the same operation identity and domain result."
@@ -537,6 +639,323 @@
           },
           "country": {
             "type": "string"
+          }
+        }
+      },
+      "Liveness": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "live"
+            ]
+          }
+        }
+      },
+      "Readiness": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "starting",
+              "membership_degraded",
+              "snapshot_unavailable"
+            ]
+          }
+        }
+      },
+      "SnapshotUnavailable": {
+        "type": "object",
+        "required": [
+          "error",
+          "status_url"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "membership_degraded",
+              "snapshot_unavailable"
+            ]
+          },
+          "status_url": {
+            "type": "string",
+            "enum": [
+              "/status"
+            ]
+          }
+        }
+      },
+      "Status": {
+        "type": "object",
+        "required": [
+          "state",
+          "process_started_at",
+          "error_code",
+          "membership",
+          "snapshot",
+          "monitor",
+          "fetch"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "starting",
+              "warming",
+              "ready",
+              "degraded"
+            ]
+          },
+          "process_started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error_code": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "membership_degraded",
+              "snapshot_unavailable",
+              "monitor_failed",
+              "monitor_inconclusive",
+              "fetch_preflight_failed",
+              "fetch_failed"
+            ]
+          },
+          "membership": {
+            "$ref": "#/components/schemas/StatusMembership"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/StatusSnapshot"
+          },
+          "monitor": {
+            "$ref": "#/components/schemas/StatusMonitor"
+          },
+          "fetch": {
+            "$ref": "#/components/schemas/StatusFetch"
+          }
+        },
+        "example": {
+          "state": "starting",
+          "process_started_at": "2026-07-29T10:00:00Z",
+          "error_code": "snapshot_unavailable",
+          "membership": {
+            "ready": false,
+            "degraded": false,
+            "epoch": "0",
+            "published_at": null
+          },
+          "snapshot": {
+            "available": false,
+            "source": "none",
+            "published_at": null,
+            "age_seconds": null,
+            "server_count": 0,
+            "format_version": null
+          },
+          "monitor": {
+            "state": "idle",
+            "started_at": null,
+            "completed_at": null,
+            "eligible_count": 0,
+            "completed_count": 0,
+            "conclusive_count": 0,
+            "inconclusive_count": 0,
+            "candidate_count": 0,
+            "complete_coverage": false,
+            "last_successful_at": null,
+            "last_duration_ms": null
+          },
+          "fetch": {
+            "state": "not_started",
+            "started_at": null,
+            "completed_at": null
+          }
+        }
+      },
+      "StatusMembership": {
+        "type": "object",
+        "required": [
+          "ready",
+          "degraded",
+          "epoch",
+          "published_at"
+        ],
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "epoch": {
+            "type": "string"
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "StatusSnapshot": {
+        "type": "object",
+        "required": [
+          "available",
+          "source",
+          "published_at",
+          "age_seconds",
+          "server_count",
+          "format_version"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "none",
+              "persisted",
+              "live"
+            ]
+          },
+          "published_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "age_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "server_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "format_version": {
+            "type": "integer",
+            "nullable": true
+          }
+        }
+      },
+      "StatusMonitor": {
+        "type": "object",
+        "required": [
+          "state",
+          "started_at",
+          "completed_at",
+          "eligible_count",
+          "completed_count",
+          "conclusive_count",
+          "inconclusive_count",
+          "candidate_count",
+          "complete_coverage",
+          "last_successful_at",
+          "last_duration_ms"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "queued",
+              "running",
+              "succeeded",
+              "inconclusive",
+              "failed"
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "eligible_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "completed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conclusive_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inconclusive_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "candidate_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "complete_coverage": {
+            "type": "boolean"
+          },
+          "last_successful_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          }
+        }
+      },
+      "StatusFetch": {
+        "type": "object",
+        "required": [
+          "state",
+          "started_at",
+          "completed_at"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "disabled",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         }
       },

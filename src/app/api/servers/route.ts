@@ -16,15 +16,36 @@ export async function GET() {
     });
 
     if (!response.ok) {
+      const body = await response.text();
+      if (response.status === 503) {
+        return new NextResponse(body, {
+          status: response.status,
+          headers: {
+            'content-type': response.headers.get('content-type') ?? 'application/json',
+            'cache-control': 'no-store',
+          },
+        });
+      }
       throw new Error('Failed to fetch servers');
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    const proxied = NextResponse.json(data);
+    for (const header of [
+      'x-play-css-snapshot-source',
+      'x-play-css-snapshot-age-seconds',
+      'cache-control',
+    ]) {
+      const value = response.headers.get(header);
+      if (value) {
+        proxied.headers.set(header, value);
+      }
+    }
+    return proxied;
   } catch {
     return NextResponse.json(
       { error: 'Failed to fetch servers' },
       { status: 500 }
     );
   }
-} 
+}

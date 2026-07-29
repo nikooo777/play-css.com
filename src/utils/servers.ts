@@ -11,6 +11,25 @@ export interface Server {
   country: string;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+export function isServerList(value: unknown): value is Server[] {
+  return Array.isArray(value) && value.every((server) => (
+    server !== null &&
+    typeof server === 'object' &&
+    typeof server.name === 'string' &&
+    typeof server.map === 'string' &&
+    isNonNegativeInteger(server.players) &&
+    isNonNegativeInteger(server.max_players) &&
+    isNonNegativeInteger(server.bots) &&
+    typeof server.ip === 'string' &&
+    typeof server.port === 'string' &&
+    typeof server.country === 'string'
+  ));
+}
+
 export interface ServerFilters {
   status: 'all' | 'empty' | 'full' | 'partial';
   noBots: boolean;

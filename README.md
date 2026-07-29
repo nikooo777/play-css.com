@@ -25,7 +25,7 @@ The frontend is built with Next.js, React, TypeScript, Tailwind CSS, and Bun.
 
 This repository contains the Next.js web application and its API proxy routes. It does not contain the server scanner, database, or Source-query backend.
 
-The initial server list is fetched by Next.js during server rendering. Browser refreshes, server details, blacklist downloads, and admin actions go through route handlers under `/api`, which forward requests to the upstream service configured by `API_URL`.
+The initial server list is fetched by Next.js during server rendering. Backend warm-up is represented by `/status`, so an unavailable initial snapshot renders progress instead of failing the page or presenting an authoritative empty list. Browser refreshes, status polling, server details, blacklist downloads, and admin actions go through route handlers under `/api`, which forward requests to the upstream service configured by `API_URL`.
 
 The required backend contract is documented in [`swagger.json`](./swagger.json). A compatible backend must be running before this application can load server data.
 
@@ -137,4 +137,14 @@ Check container health and recent output with:
 ```bash
 docker compose --env-file .env ps
 docker compose --env-file .env logs --tail=100 backend frontend
+```
+
+The backend container health check is process liveness, not public-data
+readiness. Verify the rollout contract separately:
+
+```bash
+docker compose --env-file .env exec -T backend wget -qO- http://127.0.0.1:8888/health/live
+docker compose --env-file .env exec -T backend wget -qO- http://127.0.0.1:8888/health/ready
+docker compose --env-file .env exec -T backend wget -qO- http://127.0.0.1:8888/status
+docker compose --env-file .env exec -T backend wget -qO- http://127.0.0.1:8888/servers
 ```

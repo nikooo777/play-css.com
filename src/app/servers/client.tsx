@@ -13,6 +13,7 @@ import {
   type LocationRequestState,
 } from '@/utils/geolocation';
 import {
+  isServerList,
   processServers,
   stripSpecialChars,
   type Server,
@@ -21,12 +22,19 @@ import {
   type SortField,
 } from '@/utils/servers';
 import { clearLegacyAdminCookie } from '@/utils/auth';
+import {
+  isBackendStatus,
+  startBackendStatusPolling,
+  type BackendStatus,
+  type StatusPollingScheduler,
+} from '@/utils/backendStatus';
 
 type ToggleFilter = 'noBots' | 'hideRussian' | 'stripSpecialChars';
 
 // Constants
 const VIP_IPS = process.env.NEXT_PUBLIC_VIP_IPS?.split(',').map(ip => ip.trim()).filter(Boolean) ?? [];
-const REFRESH_INTERVAL = 30000; // 30 seconds
+const REFRESH_INTERVAL = 30_000;
+const STATUS_REFRESH_INTERVAL = 5_000;
 
 // Shared styles
 const fieldClass = 'w-full h-10 px-3 rounded-[3px] border border-edge-2 bg-field text-sm text-ink placeholder:text-mut/60 focus:border-ct focus:outline-none';
@@ -49,6 +57,78 @@ function CapacityBar({ players, maxPlayers }: { players: number; maxPlayers: num
 const SSR_ROW_LIMIT = 120;
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
+
+const browserStatusPollingScheduler: StatusPollingScheduler<
+  ReturnType<typeof setTimeout>,
+  ReturnType<typeof setInterval>
+> = {
+  setTimeout,
+  clearTimeout,
+  setInterval,
+  clearInterval,
+};
+
+export function serverListStatusText(
+  status: BackendStatus | null,
+  syncFailed: boolean,
+  isRefreshing: boolean
+): string {
+  if (status?.membership.degraded) {
+    return '> membership degraded — showing last browser result';
+  }
+  if (syncFailed) {
+    return '> sync failed — retrying in 30s';
+  }
+  if (status?.error_code === 'monitor_failed') {
+    return '> live refresh failed — using current list';
+  }
+  if (status?.error_code === 'monitor_inconclusive') {
+    return '> live refresh inconclusive — using current list';
+  }
+  if (
+    status?.error_code === 'fetch_failed' ||
+    status?.error_code === 'fetch_preflight_failed'
+  ) {
+    return '> discovery failed — using current list';
+  }
+  if (status?.snapshot.source === 'persisted') {
+    if (status.monitor.state === 'running') {
+      return `> saved snapshot — live refresh ${status.monitor.completed_count.toLocaleString()}/${status.monitor.eligible_count.toLocaleString()}`;
+    }
+    return '> saved snapshot — awaiting live refresh';
+  }
+  if (isRefreshing) {
+    return '> syncing server list…';
+  }
+  return '> live — auto-refresh 30s';
+}
+
+export function shouldRefreshServerList(
+  previousSource: BackendStatus['snapshot']['source'] | undefined,
+  previousAvailable: boolean | undefined,
+  status: BackendStatus | null,
+  serverCount: number
+): boolean {
+  return (
+    (previousSource === 'persisted' && status?.snapshot.source === 'live') ||
+    Boolean(
+      previousAvailable !== true &&
+      status?.snapshot.available &&
+      status.snapshot.server_count !== serverCount
+    )
+  );
+}
+
+export function initialSnapshotAvailability(
+  status: BackendStatus | null,
+  serverCount: number
+): boolean | undefined {
+  if (!status) {
+    return undefined;
+  }
+  return status.snapshot.available &&
+    status.snapshot.server_count === serverCount;
+}
 
 function subscribeToDesktopQuery(onChange: () => void) {
   const query = window.matchMedia(DESKTOP_QUERY);
@@ -74,7 +154,15 @@ function VipTag() {
   );
 }
 
-export function ServerBrowserClient({ initialServers }: { initialServers: Server[] }) {
+export function ServerBrowserClient({
+  initialServers,
+  initialStatus,
+  initialServerListAvailable,
+}: {
+  initialServers: Server[];
+  initialStatus: BackendStatus | null;
+  initialServerListAvailable: boolean;
+}) {
   // State
   const [servers, setServers] = useState<Server[]>(initialServers);
   const [loading, setLoading] = useState(false);
@@ -100,6 +188,8 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncFailed, setSyncFailed] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(initialStatus);
+  const [serverListAvailable, setServerListAvailable] = useState(initialServerListAvailable);
   const [filtersEl, setFiltersEl] = useState<HTMLElement | null>(null);
   const [filtersHeight, setFiltersHeight] = useState(0);
   const isDesktop = useIsDesktop();
@@ -108,6 +198,12 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
   const serversRef = useRef(initialServers);
   const fetchRequestId = useRef(0);
   const activeFetchCount = useRef(0);
+  const backendStatusRef = useRef(initialStatus);
+  const snapshotSourceRef = useRef(initialStatus?.snapshot.source);
+  const snapshotAvailableRef = useRef(
+    initialSnapshotAvailability(initialStatus, initialServers.length)
+  );
+  const statusRefreshRef = useRef<Promise<BackendStatus | null> | null>(null);
 
   // One-time cleanup of the pre-sessionStorage credential cookie
   useEffect(() => {
@@ -144,6 +240,41 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     setSelectedServer(null);
   }, []);
 
+  const refreshStatus = useCallback((): Promise<BackendStatus | null> => {
+    if (statusRefreshRef.current) {
+      return statusRefreshRef.current;
+    }
+
+    const request = (async () => {
+      try {
+        const response = await fetch('/api/status', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) {
+          return null;
+        }
+        const value: unknown = await response.json();
+        if (!isBackendStatus(value)) {
+          return null;
+        }
+        backendStatusRef.current = value;
+        setBackendStatus(value);
+        return value;
+      } catch {
+        return null;
+      }
+    })();
+
+    statusRefreshRef.current = request;
+    void request.finally(() => {
+      if (statusRefreshRef.current === request) {
+        statusRefreshRef.current = null;
+      }
+    });
+    return request;
+  }, []);
+
   // Fetch servers with background refresh support. Background refreshes are
   // skipped while any request is in flight (so they can never supersede a
   // foreground retry), and a superseded request never applies its result
@@ -165,20 +296,42 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
 
     try {
       const response = await fetch('/api/servers', { signal: AbortSignal.timeout(15_000) });
+      if (response.status === 503) {
+        await refreshStatus();
+        if (fetchRequestId.current !== requestId) return;
+        setError(null);
+        if (serversRef.current.length > 0) {
+          setSyncFailed(true);
+        }
+        return;
+      }
       if (!response.ok) throw new Error('Failed to fetch servers');
-      const data: Server[] = (await response.json()) ?? [];
+      const data: unknown = await response.json();
+      if (!isServerList(data)) {
+        throw new Error('Invalid server response');
+      }
 
       if (fetchRequestId.current !== requestId) return;
 
       serversRef.current = data;
       setServers(data);
+      setServerListAvailable(true);
       setError(null);
       setSyncFailed(false);
+      await refreshStatus();
     } catch (err) {
       if (fetchRequestId.current !== requestId) return;
 
-      // Only take over the screen when there is no existing data to keep showing
-      if (!isBackgroundRefresh || serversRef.current.length === 0) {
+      const refreshedStatus = await refreshStatus();
+      if (fetchRequestId.current !== requestId) return;
+      const effectiveStatus = refreshedStatus ?? backendStatusRef.current;
+      if (
+        serversRef.current.length === 0 &&
+        effectiveStatus?.state !== 'ready'
+      ) {
+        setError(null);
+        setSyncFailed(false);
+      } else if (!isBackgroundRefresh || serversRef.current.length === 0) {
         setError(err instanceof Error ? err.message : 'Failed to fetch servers');
       } else {
         setSyncFailed(true);
@@ -191,7 +344,7 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
         setIsInitialLoad(false);
       }
     }
-  }, []);
+  }, [refreshStatus]);
 
   const handleRetry = useCallback(() => {
     fetchServers(false);
@@ -218,6 +371,36 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [fetchServers]);
+
+  useEffect(() => {
+    return startBackendStatusPolling(
+      () => {
+        void refreshStatus();
+      },
+      STATUS_REFRESH_INTERVAL,
+      browserStatusPollingScheduler
+    );
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    const source = backendStatus?.snapshot.source;
+    const previousSource = snapshotSourceRef.current;
+    const previousAvailable = snapshotAvailableRef.current;
+    snapshotSourceRef.current = source;
+    snapshotAvailableRef.current = backendStatus?.snapshot.available;
+    if (
+      !shouldRefreshServerList(
+        previousSource,
+        previousAvailable,
+        backendStatus,
+        serversRef.current.length
+      )
+    ) {
+      return;
+    }
+    const refresh = setTimeout(() => fetchServers(false), 0);
+    return () => clearTimeout(refresh);
+  }, [backendStatus, fetchServers]);
 
   // Sorting handler
   const handleSort = useCallback((field: typeof sortField) => {
@@ -334,6 +517,49 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
     );
   }
 
+  if (!error && servers.length === 0 && !serverListAvailable) {
+    const degraded = backendStatus?.state === 'degraded';
+    const ready = backendStatus?.state === 'ready';
+    const completed = backendStatus?.monitor.completed_count ?? 0;
+    const eligible = backendStatus?.monitor.eligible_count ?? 0;
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="max-w-md text-center">
+          <p className={`font-mono text-sm ${degraded ? 'text-tr' : 'text-hud'}`}>
+            {degraded
+              ? '] server list temporarily unavailable'
+              : ready
+                ? '] loading current server list'
+                : '] warming up server list'}
+            {!degraded && <span className="cursor-blink">_</span>}
+          </p>
+          <p className="mt-2 text-sm text-mut">
+            {backendStatus?.membership.degraded
+              ? 'Membership authority could not be verified. The browser will recover automatically after synchronization succeeds.'
+              : ready
+                ? 'A backend snapshot is ready. The browser is fetching the current server list.'
+              : backendStatus
+                ? 'The backend is checking Counter-Strike: Source servers. This page will update automatically.'
+                : 'Backend status is unavailable. The browser will keep checking and update automatically.'}
+          </p>
+          {eligible > 0 && (
+            <p className="mt-3 font-mono text-xs text-mut">
+              {completed.toLocaleString()} / {eligible.toLocaleString()} queries complete
+            </p>
+          )}
+          {degraded && (
+            <button
+              onClick={handleRetry}
+              className="mt-5 rounded-[2px] border border-hud/60 px-4 py-2 font-display text-xs font-semibold uppercase tracking-wider text-hud transition-colors hover:bg-hud hover:text-bg"
+            >
+              Retry now
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Error state
   if (error) {
     return (
@@ -426,12 +652,21 @@ export function ServerBrowserClient({ initialServers }: { initialServers: Server
             </span>
           </div>
           <div className="w-full font-mono text-xs sm:ml-auto sm:w-auto">
-            <span aria-live="polite" className="text-tr">
-              {syncFailed ? '> sync failed — retrying in 30s' : ''}
+            <span
+              aria-live="polite"
+              className={
+                backendStatus?.membership.degraded ||
+                syncFailed ||
+                backendStatus?.error_code === 'monitor_failed' ||
+                backendStatus?.error_code === 'monitor_inconclusive' ||
+                backendStatus?.error_code === 'fetch_failed' ||
+                backendStatus?.error_code === 'fetch_preflight_failed'
+                  ? 'text-tr'
+                  : 'text-mut'
+              }
+            >
+              {serverListStatusText(backendStatus, syncFailed, isRefreshing)}
             </span>
-            {!syncFailed && (
-              <span className="text-mut">{isRefreshing ? '> syncing server list…' : '> live — auto-refresh 30s'}</span>
-            )}
           </div>
         </section>
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   compareIps,
+  isServerList,
   processServers,
   stripSpecialChars,
   type Server,
@@ -30,6 +31,13 @@ const defaultFilters: ServerFilters = {
   ipFilter: '',
   stripSpecialChars: true,
 };
+
+test('server list validator rejects malformed successful responses', () => {
+  expect(isServerList([makeServer()])).toBe(true);
+  expect(isServerList({ servers: [makeServer()] })).toBe(false);
+  expect(isServerList([{ ...makeServer(), port: 27015 }])).toBe(false);
+  expect(isServerList([{ ...makeServer(), players: -1 }])).toBe(false);
+});
 
 describe('stripSpecialChars', () => {
   test('keeps ASCII, accented Latin, Greek, Cyrillic and CJK text', () => {
