@@ -116,7 +116,7 @@ docker compose --env-file .env ps
 
 `PLAY_CSS_WHITELIST` must be present. Leave it blank for an authoritative empty whitelist, or provide a comma-separated list of bare IP addresses. Treat changes to that value as enforcement changes.
 
-`MAXMIND_KEY` is optional. Existing country values remain usable without it, but newly discovered IPs cannot be enriched until a valid key is configured.
+`MAXMIND_KEY` is required to download and refresh the GeoLite database. A database already persisted in the named volume remains usable without it, including for newly discovered IPs, but it cannot be refreshed. Before restoring the public snapshot or starting monitoring, the backend completes a best-effort reconciliation of stored country codes. It reconciles and checks GeoLite data every 25 hours, refreshing it once it is at least 24 hours old.
 
 `PLAY_CSS_FETCHER_STEAM_API_KEY` is optional when serving the existing database. Without it, the backend continues monitoring persisted servers but skips startup discovery.
 
