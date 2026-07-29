@@ -5,7 +5,12 @@ import { ServerModal } from './ServerModal';
 import { AdminPanel } from './AdminPanel';
 import { BlacklistModal } from './BlacklistModal';
 import { CountryPreference } from './CountryPreference';
+import { FavoritesSection } from './FavoritesSection';
+import { CapacityBar } from '@/components/CapacityBar';
 import { CountryFlag, CountryFlagDefs } from '@/components/CountryFlag';
+import { FavoriteButton } from '@/components/FavoriteButton';
+import { useFavorites } from '@/utils/useFavorites';
+import { serverAddress, updateFavoriteNames } from '@/utils/favorites';
 import {
   detectCurrentCountry,
   getCountryName,
@@ -45,16 +50,6 @@ const labelClass = 'block font-display text-[11px] font-semibold uppercase track
 const ghostButtonClass = 'inline-flex items-center gap-2 font-display text-xs font-semibold uppercase tracking-wider text-mut hover:text-ink border border-edge hover:border-edge-2 bg-panel rounded-[3px] px-3 py-2 transition-colors';
 const blacklistButtonClass = 'inline-flex items-center gap-2 rounded-[3px] border border-tr/60 bg-tr/10 px-3 py-2 font-display text-xs font-semibold uppercase tracking-wider text-tr transition-colors hover:bg-tr hover:text-bg';
 const connectButtonClass = 'inline-flex items-center font-display text-[11px] font-semibold uppercase tracking-wider text-hud border border-hud/60 hover:bg-hud hover:text-bg rounded-[2px] px-3 py-1.5 transition-colors';
-
-function CapacityBar({ players, maxPlayers }: { players: number; maxPlayers: number }) {
-  const percentage = maxPlayers > 0 ? Math.min(100, Math.round((players / maxPlayers) * 100)) : 0;
-  const fill = players === 0 ? 'bg-edge-2' : players >= maxPlayers ? 'bg-tr' : 'bg-hud';
-  return (
-    <div className="mt-1 h-[3px] w-16 overflow-hidden rounded-full bg-edge">
-      <div className={`h-full ${fill}`} style={{ width: `${percentage}%` }} />
-    </div>
-  );
-}
 
 // Rows sent in the server-rendered HTML; the rest mount right after hydration
 const SSR_ROW_LIMIT = 120;
@@ -198,6 +193,7 @@ export function ServerBrowserClient({
   const [filtersEl, setFiltersEl] = useState<HTMLElement | null>(null);
   const [filtersHeight, setFiltersHeight] = useState(0);
   const isDesktop = useIsDesktop();
+  const { favoriteAddresses, toggleFavorite } = useFavorites();
   const [showFullList, setShowFullList] = useState(false);
   const locationRequestId = useRef(0);
   const serversRef = useRef(initialServers);
@@ -226,6 +222,10 @@ export function ServerBrowserClient({
   useEffect(() => {
     const timer = setTimeout(() => setShowFullList(true), 0);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    updateFavoriteNames(serversRef.current);
   }, []);
 
   // The sticky table header sits below the sticky filter bar, so it needs
@@ -313,9 +313,7 @@ export function ServerBrowserClient({
         await refreshStatus();
         if (fetchRequestId.current !== requestId) return;
         setError(null);
-        if (serversRef.current.length > 0) {
-          setSyncFailed(true);
-        }
+        setSyncFailed(true);
         return;
       }
       if (!response.ok) throw new Error('Failed to fetch servers');
@@ -331,6 +329,7 @@ export function ServerBrowserClient({
       setServerListAvailable(true);
       setError(null);
       setSyncFailed(false);
+      updateFavoriteNames(data);
       await refreshStatus();
     } catch (err) {
       if (fetchRequestId.current !== requestId) return;
@@ -343,7 +342,7 @@ export function ServerBrowserClient({
         effectiveStatus?.state !== 'ready'
       ) {
         setError(null);
-        setSyncFailed(false);
+        setSyncFailed(true);
       } else if (!isBackgroundRefresh || serversRef.current.length === 0) {
         setError(err instanceof Error ? err.message : 'Failed to fetch servers');
       } else {
@@ -568,7 +567,7 @@ export function ServerBrowserClient({
     const completed = backendStatus?.monitor.completed_count ?? 0;
     const eligible = backendStatus?.monitor.eligible_count ?? 0;
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-8 px-4 py-8">
         <div className="max-w-md text-center">
           <p className={`font-mono text-sm ${degraded ? 'text-tr' : 'text-hud'}`}>
             {degraded
@@ -601,6 +600,13 @@ export function ServerBrowserClient({
             </button>
           )}
         </div>
+        <div className="w-full max-w-xl">
+          <FavoritesSection
+            servers={[]}
+            authoritative={false}
+            cleanNames={filters.stripSpecialChars}
+          />
+        </div>
       </div>
     );
   }
@@ -608,7 +614,7 @@ export function ServerBrowserClient({
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-8 px-4 py-8">
         <div className="max-w-sm text-center">
           <p className="font-mono text-sm text-hud">
             ] reconnecting to server list<span className="cursor-blink">_</span>
@@ -622,6 +628,13 @@ export function ServerBrowserClient({
           >
             Retry now
           </button>
+        </div>
+        <div className="w-full max-w-xl">
+          <FavoritesSection
+            servers={[]}
+            authoritative={false}
+            cleanNames={filters.stripSpecialChars}
+          />
         </div>
       </div>
     );
@@ -814,6 +827,13 @@ export function ServerBrowserClient({
           )}
         </section>
 
+        <FavoritesSection
+          servers={servers}
+          authoritative={serverListAvailable && !syncFailed}
+          cleanNames={filters.stripSpecialChars}
+          onSelectServer={setSelectedServer}
+        />
+
         {/* Server List */}
         <section className="rise overflow-clip rounded border border-edge bg-panel [animation-delay:180ms]">
           {processedServers.length === 0 ? (
@@ -829,8 +849,11 @@ export function ServerBrowserClient({
                 <table className="w-full table-fixed">
                     <thead className="sticky z-10 bg-panel-2" style={{ top: filtersHeight }}>
                       <tr className="border-b border-edge">
+                        <th className="w-[4%] px-2 py-2.5">
+                          <span className="sr-only">Favorite</span>
+                        </th>
                         {[
-                          { field: 'name', label: 'Server Name', width: 'w-[35%]' },
+                          { field: 'name', label: 'Server Name', width: 'w-[31%]' },
                           { field: 'map', label: 'Map', width: 'w-[15%]' },
                           { field: 'players', label: 'Players', width: 'w-[12%]' },
                           { field: 'ip', label: 'IP:Port', width: 'w-[18%]' },
@@ -867,6 +890,14 @@ export function ServerBrowserClient({
                           }`}
                           onClick={() => setSelectedServer(server)}
                         >
+                          <td className="px-2 py-2.5 text-center">
+                            <FavoriteButton
+                              address={serverAddress(server)}
+                              name={server.name}
+                              isFavorite={favoriteAddresses.has(serverAddress(server))}
+                              onToggle={toggleFavorite}
+                            />
+                          </td>
                           <td className="px-4 py-2.5">
                             <div className="flex min-w-0 items-center">
                               <button
@@ -938,7 +969,14 @@ export function ServerBrowserClient({
                       >
                         <div className="mb-2 flex items-start justify-between">
                           <div className="min-w-0 flex-1">
-                            <h3 className="mb-1 flex items-center">
+                            <h3 className="mb-1 flex items-center gap-1.5">
+                              <FavoriteButton
+                                address={serverAddress(server)}
+                                name={server.name}
+                                isFavorite={favoriteAddresses.has(serverAddress(server))}
+                                onToggle={toggleFavorite}
+                                className="-ml-1"
+                              />
                               <button
                                 type="button"
                                 className="min-w-0 truncate text-left text-sm font-semibold text-ink"

@@ -248,7 +248,7 @@ test('server response parsing errors reach the error boundary', async () => {
       json() {
         throw new TypeError('parser bug');
       },
-    } as Response;
+    } as unknown as Response;
   }) as unknown as typeof fetch;
 
   expect(Home()).rejects.toThrow('parser bug');

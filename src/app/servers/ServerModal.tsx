@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { CountryFlag } from '@/components/CountryFlag';
+import { FavoriteButton } from '@/components/FavoriteButton';
 import { useModalDialog } from '@/utils/useModalDialog';
+import { useFavorites } from '@/utils/useFavorites';
+import { serverAddress } from '@/utils/favorites';
 import { type Server } from '@/utils/servers';
 
 interface Player {
@@ -36,6 +39,7 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const { favoriteAddresses, toggleFavorite } = useFavorites();
 
   useEffect(() => {
     if (!isOpen) {
@@ -107,7 +111,16 @@ export function ServerModal({ server, isOpen, onClose }: ServerModalProps) {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <h3 className={infoLabelClass}>Server Name</h3>
-              <p className="mt-1 text-base font-medium text-ink">{server.name}</p>
+              <p className="mt-1 flex items-center gap-1.5 text-base font-medium text-ink">
+                <FavoriteButton
+                  address={serverAddress(server)}
+                  name={server.name}
+                  isFavorite={favoriteAddresses.has(serverAddress(server))}
+                  onToggle={toggleFavorite}
+                  className="-ml-1"
+                />
+                <span className="min-w-0 truncate">{server.name}</span>
+              </p>
             </div>
             <div>
               <h3 className={infoLabelClass}>Map</h3>

@@ -15,6 +15,7 @@ The frontend is built with Next.js, React, TypeScript, Tailwind CSS, and Bun.
 - Optional cleanup of decorative characters in server and map names
 - Server details with current player names, scores, and connection times
 - `steam://connect` links for joining servers
+- Client-side favorites with offline visibility
 - VIP server highlighting
 - Downloadable Counter-Strike: Source server blacklist
 - Authenticated admin tools for adding, banning, unbanning, and recovering servers
@@ -38,6 +39,10 @@ The upstream API provides a country code for each server, but no coordinates or 
 Location access is requested only after that button is selected. The coordinate-to-country lookup runs in the browser, coordinates are discarded immediately, and the preference is kept only in memory until the page reloads. Matching servers appear first while the selected table sorting still applies within both groups.
 
 The country preference is not a distance or ping measurement.
+
+## Favorites
+
+Players can star servers to save them as favorites. Favorites are stored only in the browser's localStorage — nothing is sent to any server and no account exists. A favorites panel above the list shows saved servers with live data when they are online, keeps them visible with their last-known name when they are offline, and still offers direct Steam connect attempts while the backend itself is unavailable.
 
 ## Local development
 
