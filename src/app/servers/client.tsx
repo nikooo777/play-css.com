@@ -34,6 +34,12 @@ import {
   type StatusPollingScheduler,
 } from '@/utils/backendStatus';
 import {
+  formatBlacklistCount,
+  mergeBlacklistCount,
+  runCoalescedBlacklistRefresh,
+  startBlacklistCountPolling,
+} from '@/utils/blacklist';
+import {
   clearAutomaticRetries,
   ERROR_RECOVERY_RESET_DELAY,
 } from '@/utils/errorRecovery';
@@ -156,11 +162,13 @@ export function ServerBrowserClient({
   initialServers,
   initialStatus,
   initialServerListAvailable,
+  initialBlacklistCount,
   vipIps,
 }: {
   initialServers: Server[];
   initialStatus: BackendStatus | null;
   initialServerListAvailable: boolean;
+  initialBlacklistCount: number | null;
   vipIps: string[];
 }) {
   // State
@@ -190,6 +198,7 @@ export function ServerBrowserClient({
   const [syncFailed, setSyncFailed] = useState(false);
   const [backendStatus, setBackendStatus] = useState<BackendStatus | null>(initialStatus);
   const [serverListAvailable, setServerListAvailable] = useState(initialServerListAvailable);
+  const [blacklistCount, setBlacklistCount] = useState(initialBlacklistCount);
   const [filtersEl, setFiltersEl] = useState<HTMLElement | null>(null);
   const [filtersHeight, setFiltersHeight] = useState(0);
   const isDesktop = useIsDesktop();
@@ -205,6 +214,7 @@ export function ServerBrowserClient({
     initialSnapshotAvailability(initialStatus, initialServers.length)
   );
   const statusRefreshRef = useRef<Promise<BackendStatus | null> | null>(null);
+  const blacklistCountRefreshRef = useRef<Promise<void> | null>(null);
 
   // One-time cleanup of the pre-sessionStorage credential cookie
   useEffect(() => {
@@ -286,6 +296,23 @@ export function ServerBrowserClient({
       }
     });
     return request;
+  }, []);
+
+  const refreshBlacklistCount = useCallback((): Promise<void> => {
+    return runCoalescedBlacklistRefresh(blacklistCountRefreshRef, async () => {
+      try {
+        const response = await fetch('/api/blacklist/count', {
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!response.ok) {
+          return;
+        }
+        const value: unknown = await response.json();
+        setBlacklistCount((current) => mergeBlacklistCount(current, value));
+      } catch {
+        return;
+      }
+    });
   }, []);
 
   // Fetch servers with background refresh support. Background refreshes are
@@ -394,6 +421,16 @@ export function ServerBrowserClient({
       document
     );
   }, [refreshStatus]);
+
+  useEffect(() => {
+    return startBlacklistCountPolling(
+      () => {
+        void refreshBlacklistCount();
+      },
+      browserStatusPollingScheduler,
+      document
+    );
+  }, [refreshBlacklistCount]);
 
   useEffect(() => {
     if (!error) {
@@ -711,6 +748,18 @@ export function ServerBrowserClient({
             <span className="hud-glow font-mono text-3xl text-hud sm:text-4xl">{stats.totalPlayers}</span>
             <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-mut">
               Players in-game
+            </span>
+          </div>
+          <div className="hidden h-8 w-px bg-edge sm:block" />
+          <div
+            className="flex items-baseline gap-3"
+            title="Valid whole-IP and active per-server blacklist entries"
+          >
+            <span className="font-mono text-3xl text-tr sm:text-4xl">
+              {formatBlacklistCount(blacklistCount)}
+            </span>
+            <span className="font-display text-[11px] font-semibold uppercase tracking-[0.18em] text-mut">
+              Servers blacklisted
             </span>
           </div>
           <div className="w-full font-mono text-xs sm:ml-auto sm:w-auto">

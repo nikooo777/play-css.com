@@ -113,6 +113,39 @@
         }
       }
     },
+    "/blacklist/count": {
+      "get": {
+        "summary": "Get the public blacklist entry count",
+        "description": "Counts the valid whole-IP and active per-server entries included in the downloadable blacklist.",
+        "responses": {
+          "200": {
+            "description": "Current public blacklist entry count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "count"
+                  ],
+                  "properties": {
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipUnavailable"
+          }
+        }
+      }
+    },
     "/admin/add": {
       "post": {
         "summary": "Add or retain a server",

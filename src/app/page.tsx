@@ -1,5 +1,6 @@
 import { ServerBrowserClient } from './servers/client';
 import { isBackendStatus, type BackendStatus } from '@/utils/backendStatus';
+import { isBlacklistCount } from '@/utils/blacklist';
 import { isServerList, type Server } from '@/utils/servers';
 
 interface InitialServerResult {
@@ -12,6 +13,7 @@ class UnexpectedServerResponseError extends Error {}
 
 const INITIAL_SERVER_TIMEOUT = 10_000;
 const INITIAL_STATUS_TIMEOUT = 2_000;
+const INITIAL_BLACKLIST_TIMEOUT = 2_000;
 
 function isStartupNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) {
@@ -43,6 +45,22 @@ async function getBackendStatus(): Promise<BackendStatus | null> {
     }
     const status: unknown = await response.json();
     return isBackendStatus(status) ? status : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getBlacklistCount(): Promise<number | null> {
+  try {
+    const response = await fetch(`${process.env.API_URL}/blacklist/count`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(INITIAL_BLACKLIST_TIMEOUT),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const value: unknown = await response.json();
+    return isBlacklistCount(value) ? value.count : null;
   } catch {
     return null;
   }
@@ -87,12 +105,16 @@ async function getInitialServerResult(): Promise<InitialServerResult> {
 }
 
 export default async function Home() {
-  const initial = await getInitialServerResult();
+  const [initial, blacklistCount] = await Promise.all([
+    getInitialServerResult(),
+    getBlacklistCount(),
+  ]);
   return (
     <ServerBrowserClient
       initialServers={initial.servers}
       initialStatus={initial.status}
       initialServerListAvailable={initial.listAvailable}
+      initialBlacklistCount={blacklistCount}
       vipIps={configuredVipIps()}
     />
   );

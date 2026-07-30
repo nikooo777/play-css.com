@@ -246,6 +246,48 @@ test('authoritative empty response renders when status is unavailable', async ()
   expect(markup).not.toContain('warming up server list');
 });
 
+test('public blacklist count is displayed with the server totals', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    const url = input.toString();
+    if (url.endsWith('/servers')) {
+      return Response.json([]);
+    }
+    if (url.endsWith('/blacklist/count')) {
+      return Response.json({ count: 447 });
+    }
+    return Response.json(
+      { error: 'Backend status unavailable' },
+      { status: 502 }
+    );
+  }) as unknown as typeof fetch;
+
+  const page = await Home();
+  const markup = renderToStaticMarkup(page);
+
+  expect(page.props.initialBlacklistCount).toBe(447);
+  expect(markup).toContain('447');
+  expect(markup).toContain('Servers blacklisted');
+});
+
+test('unavailable blacklist count renders a stable placeholder', async () => {
+  globalThis.fetch = mock(async (input: string | URL | Request) => {
+    if (input.toString().endsWith('/servers')) {
+      return Response.json([]);
+    }
+    return Response.json(
+      { error: 'Backend unavailable' },
+      { status: 503 }
+    );
+  }) as unknown as typeof fetch;
+
+  const page = await Home();
+  const markup = renderToStaticMarkup(page);
+
+  expect(page.props.initialBlacklistCount).toBeNull();
+  expect(markup).toContain('—');
+  expect(markup).toContain('Servers blacklisted');
+});
+
 test('VIP addresses are normalized from runtime configuration', async () => {
   process.env.VIP_IPS = ' 54.37.245.51,1.1.1.1,54.37.245.51 ';
   globalThis.fetch = mock(async (input: string | URL | Request) => {
