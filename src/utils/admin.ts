@@ -5,6 +5,7 @@ export const WRITABLE_BAN_REASONS = [
   'explicit_fake_client_producer',
   'player_count_mismatch',
   'synthetic_connection_cadence',
+  'inconsistent_server_identity',
   'same_connection_time',
   'duplicate_roster',
 ] as const;
@@ -15,6 +16,7 @@ export const DETECTION_REASONS = [
   'explicit_fake_client_producer',
   'player_count_mismatch',
   'synthetic_connection_cadence',
+  'inconsistent_server_identity',
   'same_connection_time',
   'duplicate_roster',
   'steam_metadata_illegal_counts',

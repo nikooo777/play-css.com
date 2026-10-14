@@ -48,6 +48,59 @@
                   "items": {
                     "$ref": "#/components/schemas/OnlineServer"
                   }
+                },
+                "examples": {
+                  "unadjusted": {
+                    "value": [
+                      {
+                        "name": "Reported server",
+                        "map": "de_dust2",
+                        "players": 12,
+                        "reported_players": 12,
+                        "excluded_players": 0,
+                        "max_players": 64,
+                        "bots": 0,
+                        "ip": "54.37.245.51",
+                        "port": "27045",
+                        "country": "FR",
+                        "population_status": "reported"
+                      }
+                    ]
+                  },
+                  "adjusted": {
+                    "value": [
+                      {
+                        "name": "Adjusted server",
+                        "map": "de_dust2",
+                        "players": 12,
+                        "reported_players": 20,
+                        "excluded_players": 8,
+                        "max_players": 64,
+                        "bots": 0,
+                        "ip": "80.75.221.34",
+                        "port": "27015",
+                        "country": "BR",
+                        "population_status": "manually_adjusted"
+                      }
+                    ]
+                  },
+                  "saturated": {
+                    "value": [
+                      {
+                        "name": "Saturated adjustment",
+                        "map": "de_dust2",
+                        "players": 0,
+                        "reported_players": 4,
+                        "excluded_players": 4,
+                        "max_players": 64,
+                        "bots": 0,
+                        "ip": "80.75.221.34",
+                        "port": "27015",
+                        "country": "BR",
+                        "population_status": "manually_adjusted"
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -334,6 +387,236 @@
         }
       }
     },
+    "/admin/population-adjustments": {
+      "get": {
+        "summary": "List current manual population adjustments",
+        "description": "Returns private review notes ordered by updated_at DESC, id DESC. The default limit is 50 and the maximum is 200. Pass a nonempty next_cursor back unchanged.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque <RFC3339Nano>,<id> keyset cursor",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current adjustment page",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-store"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PopulationAdjustmentPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PopulationAdjustmentListBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "500": {
+            "$ref": "#/components/responses/PopulationAdjustmentListFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/MembershipStarting"
+          }
+        }
+      }
+    },
+    "/admin/population-adjustment": {
+      "post": {
+        "summary": "Set a manual population adjustment",
+        "description": "Creates or replaces the exact endpoint's current exclusion. The form accepts exactly one address, excluded_players, reason, and review_note value; unknown, duplicate, and empty values are rejected. The endpoint must currently exist. Same-key retries replay the durable result, including terminal target_not_found.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPopulationAdjustmentForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created, updated, or already configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetPopulationAdjustmentResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "address": "80.75.221.34:27015",
+                    "requested_excluded_players": 35,
+                    "requested_reason": "confirmed_automated_clients",
+                    "result_code": "created",
+                    "applied": true,
+                    "previous_adjustment": null,
+                    "current_adjustment": {
+                      "excluded_players": 35,
+                      "reason": "confirmed_automated_clients"
+                    },
+                    "operation_id": 42,
+                    "replayed": false,
+                    "publication_status": "membership_ready"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PopulationAdjustmentBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "description": "Durable target_not_found result. Replaying the same key returns the same result even after rediscovery.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetPopulationAdjustmentTargetNotFoundResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "address": "80.75.221.34:27015",
+                    "requested_excluded_players": 35,
+                    "requested_reason": "confirmed_automated_clients",
+                    "result_code": "target_not_found",
+                    "applied": false,
+                    "previous_adjustment": null,
+                    "current_adjustment": null,
+                    "operation_id": 42,
+                    "replayed": true,
+                    "publication_status": "membership_ready"
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "$ref": "#/components/responses/PopulationAdjustmentConflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/PopulationAdjustmentFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/PopulationAdjustmentUnavailable"
+          }
+        }
+      }
+    },
+    "/admin/population-adjustment/clear": {
+      "post": {
+        "summary": "Clear a manual population adjustment",
+        "description": "Clears the exact endpoint's adjustment even when its game-server row is absent. The form accepts exactly one address and review_note value; unknown, duplicate, and empty values are rejected. Same-key retries replay the durable result.",
+        "security": [
+          {
+            "basicAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/ClearPopulationAdjustmentForm"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cleared or adjustment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearPopulationAdjustmentResponse"
+                },
+                "example": {
+                  "success": true,
+                  "data": {
+                    "address": "80.75.221.34:27015",
+                    "result_code": "cleared",
+                    "cleared": true,
+                    "previous_adjustment": {
+                      "excluded_players": 35,
+                      "reason": "confirmed_automated_clients"
+                    },
+                    "current_adjustment": null,
+                    "operation_id": 43,
+                    "replayed": false,
+                    "publication_status": "membership_ready"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/PopulationAdjustmentBadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/PopulationAdjustmentConflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/PopulationAdjustmentFailure"
+          },
+          "503": {
+            "$ref": "#/components/responses/PopulationAdjustmentUnavailable"
+          }
+        }
+      }
+    },
     "/admin/banned": {
       "get": {
         "summary": "List active durable server bans",
@@ -583,6 +866,33 @@
       "MembershipUnavailable": {
         "description": "Tracker membership is unavailable, or an indeterminate mutation returns its operation key, retry_same_key=true, and unknown_membership_converged or unknown_membership_degraded"
       },
+      "Unauthorized": {
+        "description": "Missing or invalid HTTP Basic credentials. The response has no body.",
+        "headers": {
+          "WWW-Authenticate": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Basic realm=\"Authorization Required\""
+              ]
+            }
+          }
+        }
+      },
+      "MembershipStarting": {
+        "description": "Administrative routes are unavailable until authoritative membership is ready.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/MembershipStartingResponse"
+            },
+            "example": {
+              "error": "starting",
+              "status_url": "/status"
+            }
+          }
+        }
+      },
       "SnapshotUnavailable": {
         "description": "Membership is degraded or no usable public snapshot exists",
         "headers": {
@@ -606,6 +916,147 @@
       },
       "RecoveryResult": {
         "description": "Durable recovery result with outcome, operation ID, replay status, event IDs, requires_repopulation, and attempt-local publication_status."
+      },
+      "PopulationAdjustmentListBadRequest": {
+        "description": "The limit or cursor is malformed.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "no-store"
+              ]
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiErrorResponse"
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentListFailure": {
+        "description": "The current population adjustments could not be loaded.",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "no-store"
+              ]
+            }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiErrorResponse"
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentBadRequest": {
+        "description": "The form, address, adjustment values, review note, or idempotency key is invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentInvalidRequestResponse"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentConflict": {
+        "description": "The idempotency key belongs to a different normalized population-adjustment intent.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/PopulationAdjustmentConflictResponse"
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentFailure": {
+        "description": "A pending durable intent must be retried with the same key, no receipt was created, or durable receipt integrity requires operator intervention.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentPendingResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentReceiptNotCreatedResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentReceiptIntegrityResponse"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentUnavailable": {
+        "description": "Membership is not ready, or receipt creation or domain commit is inconclusive.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MembershipStartingResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentReceiptCreationUnknownResponse"
+                },
+                {
+                  "$ref": "#/components/schemas/PopulationAdjustmentDomainUnknownResponse"
+                }
+              ]
+            },
+            "examples": {
+              "membership_starting": {
+                "value": {
+                  "error": "starting",
+                  "status_url": "/status"
+                }
+              },
+              "receipt_creation_unknown": {
+                "value": {
+                  "success": false,
+                  "data": {
+                    "error_code": "population_adjustment_outcome_unknown",
+                    "operation_key": "10000000-0000-0000-0000-000000000001",
+                    "retry_same_key": true,
+                    "operator_intervention": false
+                  },
+                  "error": "population adjustment receipt creation is inconclusive"
+                }
+              },
+              "domain_outcome_unknown": {
+                "value": {
+                  "success": false,
+                  "data": {
+                    "error_code": "population_adjustment_outcome_unknown",
+                    "operation_key": "10000000-0000-0000-0000-000000000001",
+                    "operation_id": 42,
+                    "retry_same_key": true,
+                    "operator_intervention": false,
+                    "publication_status": "unknown_membership_converged"
+                  },
+                  "error": "population adjustment transaction outcome is unknown"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "schemas": {
@@ -629,6 +1080,7 @@
           "explicit_fake_client_producer",
           "player_count_mismatch",
           "synthetic_connection_cadence",
+          "inconsistent_server_identity",
           "same_connection_time",
           "duplicate_roster",
           "steam_metadata_illegal_counts",
@@ -645,12 +1097,27 @@
           "explicit_fake_client_producer",
           "player_count_mismatch",
           "synthetic_connection_cadence",
+          "inconsistent_server_identity",
           "same_connection_time",
           "duplicate_roster"
         ]
       },
       "OnlineServer": {
         "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "map",
+          "players",
+          "reported_players",
+          "excluded_players",
+          "max_players",
+          "bots",
+          "ip",
+          "port",
+          "country",
+          "population_status"
+        ],
         "properties": {
           "name": {
             "type": "string"
@@ -659,7 +1126,19 @@
             "type": "string"
           },
           "players": {
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0,
+            "description": "Population after the current manual exclusion is applied"
+          },
+          "reported_players": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Raw A2S-derived human count before manual correction"
+          },
+          "excluded_players": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Exclusion actually applied to this response"
           },
           "max_players": {
             "type": "integer"
@@ -676,7 +1155,944 @@
           },
           "country": {
             "type": "string"
+          },
+          "population_status": {
+            "type": "string",
+            "enum": [
+              "reported",
+              "manually_adjusted"
+            ],
+            "description": "reported forwards normal A2S-derived counts and does not imply verification"
           }
+        },
+        "example": {
+          "name": "Example CSS Server",
+          "map": "de_dust2",
+          "players": 12,
+          "reported_players": 20,
+          "excluded_players": 8,
+          "max_players": 64,
+          "bots": 0,
+          "ip": "54.37.245.51",
+          "port": "27045",
+          "country": "FR",
+          "population_status": "manually_adjusted"
+        }
+      },
+      "PopulationAdjustmentReason": {
+        "type": "string",
+        "enum": [
+          "confirmed_automated_clients"
+        ]
+      },
+      "PopulationAdjustmentSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "excluded_players",
+          "reason"
+        ],
+        "properties": {
+          "excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          }
+        }
+      },
+      "NullablePopulationAdjustmentSummary": {
+        "type": "object",
+        "nullable": true,
+        "additionalProperties": false,
+        "required": [
+          "excluded_players",
+          "reason"
+        ],
+        "properties": {
+          "excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          }
+        }
+      },
+      "PopulationAdjustmentPublicationStatus": {
+        "type": "string",
+        "enum": [
+          "membership_ready",
+          "committed_membership_degraded"
+        ]
+      },
+      "PopulationAdjustmentUnknownPublicationStatus": {
+        "type": "string",
+        "enum": [
+          "unknown_membership_converged",
+          "unknown_membership_degraded"
+        ]
+      },
+      "SetPopulationAdjustmentForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "excluded_players",
+          "reason",
+          "review_note"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65,
+            "example": 35
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          },
+          "review_note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Normalized private review note, limited to 512 Unicode code points and 2048 UTF-8 bytes"
+          }
+        }
+      },
+      "ClearPopulationAdjustmentForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "review_note"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "review_note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Normalized private review note, limited to 512 Unicode code points and 2048 UTF-8 bytes"
+          }
+        }
+      },
+      "CurrentPopulationAdjustment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "excluded_players",
+          "reason",
+          "review_note",
+          "last_operation_id",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          },
+          "review_note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Normalized private review note, limited to 512 Unicode code points and 2048 UTF-8 bytes"
+          },
+          "last_operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PopulationAdjustmentPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "adjustments",
+          "next_cursor"
+        ],
+        "properties": {
+          "adjustments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CurrentPopulationAdjustment"
+            }
+          },
+          "next_cursor": {
+            "type": "string",
+            "example": "2026-07-30T10:20:30.123456Z,42"
+          }
+        },
+        "example": {
+          "adjustments": [
+            {
+              "address": "80.75.221.34:27015",
+              "excluded_players": 35,
+              "reason": "confirmed_automated_clients",
+              "review_note": "Confirmed from authenticated in-server status",
+              "last_operation_id": 42,
+              "created_at": "2026-07-30T10:20:30.123456Z",
+              "updated_at": "2026-07-30T10:20:30.123456Z"
+            }
+          ],
+          "next_cursor": "2026-07-30T10:20:30.123456Z,42"
+        }
+      },
+      "SetPopulationAdjustmentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SetPopulationAdjustmentData"
+          }
+        }
+      },
+      "SetPopulationAdjustmentData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "requested_excluded_players",
+          "requested_reason",
+          "result_code",
+          "applied",
+          "previous_adjustment",
+          "current_adjustment",
+          "operation_id",
+          "replayed",
+          "publication_status"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "requested_excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65
+          },
+          "requested_reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          },
+          "result_code": {
+            "type": "string",
+            "enum": [
+              "created",
+              "updated",
+              "already_configured"
+            ]
+          },
+          "applied": {
+            "type": "boolean"
+          },
+          "previous_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "current_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentPublicationStatus"
+          }
+        }
+      },
+      "SetPopulationAdjustmentTargetNotFoundResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SetPopulationAdjustmentTargetNotFoundData"
+          }
+        }
+      },
+      "SetPopulationAdjustmentTargetNotFoundData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "requested_excluded_players",
+          "requested_reason",
+          "result_code",
+          "applied",
+          "previous_adjustment",
+          "current_adjustment",
+          "operation_id",
+          "replayed",
+          "publication_status"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "requested_excluded_players": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65
+          },
+          "requested_reason": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReason"
+          },
+          "result_code": {
+            "type": "string",
+            "enum": [
+              "target_not_found"
+            ]
+          },
+          "applied": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "previous_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "current_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentPublicationStatus"
+          }
+        }
+      },
+      "ClearPopulationAdjustmentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ClearPopulationAdjustmentData"
+          }
+        }
+      },
+      "ClearPopulationAdjustmentData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "result_code",
+          "cleared",
+          "previous_adjustment",
+          "current_adjustment",
+          "operation_id",
+          "replayed",
+          "publication_status"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "80.75.221.34:27015"
+          },
+          "result_code": {
+            "type": "string",
+            "enum": [
+              "cleared",
+              "adjustment_not_found"
+            ]
+          },
+          "cleared": {
+            "type": "boolean"
+          },
+          "previous_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "current_adjustment": {
+            "$ref": "#/components/schemas/NullablePopulationAdjustmentSummary"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentPublicationStatus"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "type": "array",
+            "description": "Present only when the server runs in Gin debug mode.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PopulationAdjustmentInvalidRequestResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentInvalidRequestData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentInvalidRequestData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "retry_same_key",
+          "operator_intervention"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "invalid_population_adjustment_request"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        }
+      },
+      "PopulationAdjustmentConflictResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentConflictData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentConflictData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "operation_id",
+          "retry_same_key",
+          "operator_intervention"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "operation_key_conflict"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentUnknownPublicationStatus"
+          }
+        }
+      },
+      "PopulationAdjustmentPendingResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentPendingData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentPendingData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "operation_id",
+          "retry_same_key",
+          "operator_intervention",
+          "receipt_status"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "population_adjustment_pending"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "receipt_status": {
+            "type": "string",
+            "enum": [
+              "pending"
+            ]
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptNotCreatedResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReceiptNotCreatedData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptNotCreatedData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "retry_same_key",
+          "operator_intervention"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "population_adjustment_receipt_not_created"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptIntegrityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReceiptIntegrityData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptIntegrityData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "retry_same_key",
+          "operator_intervention"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "population_adjustment_receipt_integrity"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentUnknownPublicationStatus"
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptCreationUnknownResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentReceiptCreationUnknownData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentReceiptCreationUnknownData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "retry_same_key",
+          "operator_intervention"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "population_adjustment_outcome_unknown"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        }
+      },
+      "PopulationAdjustmentDomainUnknownResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "success",
+          "data",
+          "error"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/PopulationAdjustmentDomainUnknownData"
+          },
+          "error": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/DebugTrace"
+          }
+        }
+      },
+      "PopulationAdjustmentDomainUnknownData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error_code",
+          "operation_key",
+          "operation_id",
+          "retry_same_key",
+          "operator_intervention",
+          "publication_status"
+        ],
+        "properties": {
+          "error_code": {
+            "type": "string",
+            "enum": [
+              "population_adjustment_outcome_unknown"
+            ]
+          },
+          "operation_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "retry_same_key": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operator_intervention": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "publication_status": {
+            "$ref": "#/components/schemas/PopulationAdjustmentUnknownPublicationStatus"
+          }
+        }
+      },
+      "MembershipStartingResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "status_url"
+        ],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "starting"
+            ]
+          },
+          "status_url": {
+            "type": "string",
+            "enum": [
+              "/status"
+            ]
+          }
+        }
+      },
+      "DebugTrace": {
+        "type": "array",
+        "description": "Present only when the server runs in Gin debug mode.",
+        "items": {
+          "type": "string"
         }
       },
       "Liveness": {
@@ -856,6 +2272,9 @@
               "explicit_producer_match_count": 0,
               "cadence_match_count": 0,
               "combined_match_count": 0,
+              "identity_attempted_count": 0,
+              "identity_successful_count": 0,
+              "identity_match_count": 0,
               "observe_only_finding_count": 0,
               "enforce_eligible_finding_count": 0
             }
@@ -1059,6 +2478,9 @@
           "explicit_producer_match_count",
           "cadence_match_count",
           "combined_match_count",
+          "identity_attempted_count",
+          "identity_successful_count",
+          "identity_match_count",
           "observe_only_finding_count",
           "enforce_eligible_finding_count"
         ],
@@ -1107,6 +2529,18 @@
             "minimum": 0
           },
           "combined_match_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "identity_attempted_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "identity_successful_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "identity_match_count": {
             "type": "integer",
             "minimum": 0
           },
@@ -1257,6 +2691,7 @@
           "a2s_info",
           "a2s_players",
           "a2s_rules",
+          "connection_challenge",
           "roster_comparison",
           "steam_metadata"
         ]

@@ -56,6 +56,9 @@ export interface BackendStatus {
       combined_match_count: number;
       observe_only_finding_count: number;
       enforce_eligible_finding_count: number;
+      identity_attempted_count?: number;
+      identity_successful_count?: number;
+      identity_match_count?: number;
     };
   };
   fetch: {
@@ -192,6 +195,9 @@ export function isBackendStatus(value: unknown): value is BackendStatus {
     isNonNegativeInteger(rules.combined_match_count) &&
     isNonNegativeInteger(rules.observe_only_finding_count) &&
     isNonNegativeInteger(rules.enforce_eligible_finding_count) &&
+    (rules.identity_attempted_count === undefined || isNonNegativeInteger(rules.identity_attempted_count)) &&
+    (rules.identity_successful_count === undefined || isNonNegativeInteger(rules.identity_successful_count)) &&
+    (rules.identity_match_count === undefined || isNonNegativeInteger(rules.identity_match_count)) &&
     fetchStates.includes(fetch.state as FetchState) &&
     isNullableString(fetch.started_at) &&
     isNullableString(fetch.completed_at)

@@ -78,6 +78,16 @@ test('backend status validator accepts the complete contract', () => {
   expect(isBackendStatus(validStatus())).toBe(true);
 });
 
+test('backend status validator accepts optional identity counters and rejects invalid values', () => {
+  const status = validStatus();
+  status.monitor.rules.identity_attempted_count = 3;
+  status.monitor.rules.identity_successful_count = 2;
+  status.monitor.rules.identity_match_count = 1;
+  expect(isBackendStatus(status)).toBe(true);
+  status.monitor.rules.identity_match_count = -1;
+  expect(isBackendStatus(status)).toBe(false);
+});
+
 test('backend status validator rejects malformed nested state', () => {
   const nullMembership = {
     ...validStatus(),

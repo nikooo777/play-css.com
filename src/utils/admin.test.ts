@@ -18,11 +18,13 @@ describe('admin API helpers', () => {
       'explicit_fake_client_producer',
       'player_count_mismatch',
       'synthetic_connection_cadence',
+      'inconsistent_server_identity',
       'same_connection_time',
       'duplicate_roster',
     ]);
     expect(DETECTION_REASONS).toContain('explicit_fake_client_producer');
     expect(DETECTION_REASONS).toContain('synthetic_connection_cadence');
+    expect(DETECTION_REASONS).toContain('inconsistent_server_identity');
   });
 
   test('preserves structured mutation data', () => {
