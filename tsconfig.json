@@ -6,6 +6,10 @@
       "dom.iterable",
       "esnext"
     ],
+    "types": [
+      "bun",
+      "node"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,

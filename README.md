@@ -89,6 +89,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `bun run build` | Create a production build. |
 | `bun run start` | Run the production build. |
 | `bun run lint` | Run ESLint. |
+| `bun run typecheck` | Check TypeScript without emitting files. |
 | `bun run test` | Run the Bun test suite. |
 
 ## Container deployment
