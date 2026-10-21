@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
-FROM node:24.21.0-alpine3.24 AS build
+FROM node:24.22.1-alpine3.24 AS build
 
 RUN apk upgrade --no-cache
 
@@ -20,7 +20,7 @@ COPY . .
 
 RUN ./node_modules/.bin/next build
 
-FROM node:24.21.0-alpine3.24 AS runtime
+FROM node:24.22.1-alpine3.24 AS runtime
 
 RUN apk upgrade --no-cache \
     && rm -rf /usr/local/lib/node_modules/npm \
